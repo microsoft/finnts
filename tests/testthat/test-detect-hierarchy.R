@@ -163,8 +163,19 @@ test_that("missing combo labels form the engine's NA label", {
   # prep_data() names a missing value and the literal text "NA" identically.
   expect_error(detect_hierarchy(data.frame(A = c(NA, "NA"), B = "x"), c("A", "B")),
     "same '--'-joined", fixed = TRUE)
-  expect_error(detect_hierarchy(data.frame(A = c(1, NaN)), "A"), "nonfinite")
   expect_error(detect_hierarchy(data.frame(A = c(1, -Inf, NA)), "A"), "nonfinite")
+})
+
+test_that("numeric NaN combo labels act as missing values unless mixed with NA", {
+  nan_only <- data.frame(Leader = c(1, 1, NaN, NaN), Product = c(10, 20, 10, 20))
+  result <- detect_hierarchy(nan_only, c("Leader", "Product"))
+  expect_identical(result$forecast_approach, "grouped_hierarchy")
+  expect_equal(result$counts[["Leader"]], 2L)
+
+  mixed <- data.frame(Leader = c(NA, NaN, 1, 1), Product = c(10, 20, 10, 20))
+  expect_error(detect_hierarchy(mixed, c("Leader", "Product")),
+    "Combo column 'Leader' contains both NA and NaN values", fixed = TRUE)
+  expect_error(detect_hierarchy(data.frame(A = c(1, Inf)), "A"), "nonfinite")
 })
 
 test_that("a column mixing missing values and literal NA text is rejected", {

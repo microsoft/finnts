@@ -521,6 +521,48 @@ test_that("grouped hierarchy rejects a column mixing missing values and NA text"
     sum(data$Target[data$Date == as.Date("2020-01-01")]))
 })
 
+test_that("grouped hierarchy treats NaN-only combo values as missing and reconciles", {
+  data <- missing_label_hierarchy_data(c(1, 2, NaN))
+  prepared <- prep_missing_label_hierarchy(data, withr::local_tempdir())
+
+  expect_false(anyNA(prepared$hts_info$nodes))
+  # Series keep their existing NaN names; the group uses the missing label.
+  expect_true(all(c("NaN--X", "NaN--Y") %in% prepared$hts_info$original_combos))
+  leader_na <- prepared$data %>%
+    dplyr::filter(Combo == "Leader_NA", Date == as.Date("2020-01-01"))
+  expect_equal(leader_na$Target, 29)
+  expect_grouped_reconciles(prepared)
+})
+
+test_that("grouped hierarchy rejects a numeric column mixing NA and NaN", {
+  combos <- data.frame(Leader = c(NA, NaN, 1, 1), Product = c(10, 20, 10, 20))
+  data <- merge(combos, data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))))
+  data$Target <- as.numeric(seq_len(nrow(data)))
+  data <- tidyr::unite(tibble::as_tibble(data), "Combo", Leader, Product, sep = "--", remove = FALSE)
+  # Series identities stay distinct, so only the group label is ambiguous.
+  expect_setequal(unique(data$Combo), c("NA--10", "NaN--20", "1--10", "1--20"))
+
+  writes <- 0L
+  testthat::local_mocked_bindings(write_data = function(...) {
+    writes <<- writes + 1L
+    invisible(NULL)
+  })
+  expect_error(
+    prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "grouped_hierarchy", 12),
+    "Combo column 'Leader' contains both NA and NaN values", fixed = TRUE
+  )
+  expect_error(get_grouped_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
+  expect_identical(writes, 0L)
+
+  # Standard hierarchies keep the two values as separate series.
+  standard <- prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+    c("Leader", "Product"), NULL, "standard_hierarchy", 12)
+  expect_false(anyDuplicated(standard[c("Combo", "Date")]) > 0)
+  expect_equal(standard$Target[standard$Combo == "Total" & standard$Date == as.Date("2020-01-01")],
+    sum(data$Target[data$Date == as.Date("2020-01-01")]))
+})
+
 test_that("prep_hierarchical_data works with more than 10 combo variables", {
   n_dates <- 3
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)

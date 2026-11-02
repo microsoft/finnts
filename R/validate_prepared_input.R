@@ -26,10 +26,12 @@
 #' * `R9` `date_type` is valid and is not finer or coarser than the data.
 #' * `R10` `fiscal_year_start` is a number from 1 to 12.
 #' * `R11` Spark tables run with Spark parallel processing.
-#' * `R12` standard and grouped hierarchies can name every series: no grouped
-#'   combo column mixes missing values with the text `"NA"`, no two series map
-#'   to the same name after name cleanup, and at least two series remain after
-#'   `combo_cleanup_date`. Always passes for `bottoms_up`.
+#' * `R12` standard and grouped hierarchies can name every series and map every
+#'   external regressor: no grouped combo column mixes missing values with the
+#'   text `"NA"` or numeric `NA` with `NaN`, no two series map to the same name
+#'   after name cleanup, at least two series remain after `combo_cleanup_date`,
+#'   and no external regressor has `NaN`, infinite or conflicting values or an
+#'   ambiguous source level. Always passes for `bottoms_up`.
 #' * `P1` history end date and the rows treated as future periods.
 #' * `P2` external regressors with future values and their coverage.
 #' * `P3` missing periods that preparation pads.
@@ -46,9 +48,10 @@
 #'
 #' @inheritParams prep_data
 #' @param forecast_approach Forecast approach, as passed to [prep_data()].
-#'   It only changes `R12`, which builds the hierarchy's series names for
-#'   standard and grouped hierarchies. Every approach expects bottom-level
-#'   series, so totals mixed with their parts fail `P7` for all.
+#'   It only changes `R12`, which builds the hierarchy's series names and maps
+#'   external regressors for standard and grouped hierarchies. Every approach
+#'   expects bottom-level series, so totals mixed with their parts fail `P7`
+#'   for all.
 #' @param back_test_scenarios Number of back-test scenarios, as passed to
 #'   [prep_models()]. Default of NULL chooses them from the history length.
 #' @param back_test_spacing Periods between back-test scenarios, as passed to
@@ -168,9 +171,9 @@ validate_prepared_input <- function(input_data,
   run_rule("R9", c("R1", "R3"), function() validation_check_frequency(data, combo_variables, date_type))
   run_rule("R8", c("R3", "R9"), function() check_input_date_alignment(data, date_type))
   run_rule("R10", character(), function() check_input_fiscal_year_start(fiscal_year_start))
-  run_rule("R12", c("R1", "R3", "R4", "R5", "R6"), function() {
+  run_rule("R12", c("R1", "R3", "R4", "R5", "R6", "R7"), function() {
     validation_check_hierarchy(
-      data, combo_variables, target_variable, forecast_approach,
+      data, combo_variables, target_variable, external_regressors, forecast_approach,
       hist_start_date, hist_end_date, combo_cleanup_date
     )
   })
@@ -264,7 +267,7 @@ validation_check_row <- function(rule, status, message) {
     R9 = "date_type is valid and matches the data frequency",
     R10 = "fiscal_year_start is a number from 1 to 12",
     R11 = "Spark tables use Spark parallel processing",
-    R12 = "Hierarchy series labels are unambiguous",
+    R12 = "Hierarchy series and regressors can be prepared",
     P1 = "History end date and future rows",
     P2 = "Future external regressor values",
     P3 = "Missing periods padded during preparation",
@@ -282,20 +285,26 @@ validation_check_row <- function(rule, status, message) {
   )
 }
 
-#' Check that hierarchy series labels can be prepared
+#' Check that a hierarchy's series and external regressors can be prepared
 #'
 #' For standard and grouped hierarchies, builds the hierarchy's series names
-#' through `hierarchy_series_names()`, the same helpers `prep_data()` uses, so a
+#' through `hierarchy_series_names()` and maps each external regressor through
+#' `external_regressor_mapping()`, the same helpers `prep_data()` uses, so a
 #' failure carries the `prep_data()` message. It fails when a grouped combo
-#' column mixes missing values and literal `"NA"` text, when two series map to
-#' the same name after name cleanup, or when fewer than two series remain.
+#' column mixes missing values and literal `"NA"` text or numeric `NA` and
+#' `NaN`, when two series map to the same name after name cleanup, when fewer
+#' than two series remain, or when a regressor has `NaN` or infinite values,
+#' conflicting values, or an ambiguous source level. Missing regressor values
+#' alone are allowed.
 #' Series that `combo_cleanup_date` removes are excluded, as in preparation;
 #' when the history bounds cannot be resolved, every series is checked and the
-#' bounds problem is left to `P1`. Bottoms-up forecasts pass.
+#' bounds problem is left to `P1`. Bottoms-up forecasts pass because they do
+#' not build a hierarchy or map regressors.
 #'
 #' @param data normalized input data
 #' @param combo_variables combo variable names
 #' @param target_variable target column name
+#' @param external_regressors external regressor names, or NULL
 #' @param forecast_approach forecast approach passed to `prep_data()`
 #' @param hist_start_date,hist_end_date history bounds passed to `prep_data()`
 #' @param combo_cleanup_date cleanup date passed to `prep_data()`, or NULL
@@ -307,6 +316,7 @@ validation_check_row <- function(rule, status, message) {
 validation_check_hierarchy <- function(data,
                                        combo_variables,
                                        target_variable,
+                                       external_regressors,
                                        forecast_approach,
                                        hist_start_date,
                                        hist_end_date,
@@ -335,6 +345,9 @@ validation_check_hierarchy <- function(data,
   }
 
   hierarchy_series_names(data, combo_variables, forecast_approach)
+  if (length(external_regressors) > 0) {
+    external_regressor_mapping(data, combo_variables, external_regressors)
+  }
   NULL
 }
 

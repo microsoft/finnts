@@ -297,22 +297,31 @@ pick_right_hierarchy <- function(input_data,
   }
 }
 
-#' Reject a combo column that mixes missing values and literal "NA" text
+#' Reject a combo column whose missing values cannot be told apart
 #'
-#' Combo names write a missing value as the text `"NA"` (`tidyr::unite()`), so
-#' a column holding both a missing value and the literal text `"NA"` cannot be
-#' told apart once labelled. Grouped hierarchies and `detect_hierarchy()` call
-#' this before treating missing values as the `"NA"` label, so the two are never
-#' silently merged into one group.
+#' Grouped hierarchies and `detect_hierarchy()` treat missing combo values as
+#' the `"NA"` label, and numeric `NaN` as missing. A column holding a missing
+#' value together with the literal text `"NA"`, or numeric `NA` together with
+#' `NaN`, would merge two distinct series groups into one, so it is rejected.
+#' Combo names still distinguish them (`tidyr::unite()` writes `"NA"` and
+#' `"NaN"`), so bottoms-up and standard hierarchies are unaffected.
 #'
 #' @param values combo column values, already whitespace-trimmed when
 #'   character-like; factors are compared by their labels
 #' @param variable combo column name used in the error message
 #'
-#' @return `NULL` invisibly; stops with an actionable error when the column
-#'   contains both forms. No I/O.
+#' @return `NULL` invisibly; stops with an actionable error naming the column
+#'   when it mixes either pair. No I/O.
 #' @noRd
 check_mixed_missing_labels <- function(values, variable) {
+  if (is.numeric(values) && any(is.nan(values)) && any(is.na(values) & !is.nan(values))) {
+    stop(
+      "Combo column '", variable, "' contains both NA and NaN values, ",
+      "which a grouped hierarchy treats as one missing label. Use one of them ",
+      "consistently, or replace one with a distinct label.",
+      call. = FALSE
+    )
+  }
   if (anyNA(values) && any(as.character(values) == "NA", na.rm = TRUE)) {
     stop(
       "Combo column '", variable, "' contains both missing values and the text \"NA\", ",
@@ -328,12 +337,13 @@ check_mixed_missing_labels <- function(values, variable) {
 #'
 #' Builds the group matrix passed to [hts::gts()]: one row per combo variable
 #' and one column per bottom series, in the row order of `input_data`.
-#' Missing combo values are stored as the text label `"NA"`, matching the
-#' `tidyr::unite()` combo names and the hts level names (for example
-#' `Leader_NA`); `hts::combinef()` cannot reconcile `NA` group labels. The
-#' matrix keeps its original type when no value is missing. A column holding
-#' both missing values and the literal text `"NA"` stops with an error rather
-#' than merging the two into one group.
+#' Missing combo values, including numeric `NaN`, are stored as the text label
+#' `"NA"`, matching the hts level names (for example `Leader_NA`);
+#' `hts::combinef()` cannot reconcile `NA` group labels. `NaN` is converted per
+#' column so the result does not depend on other columns' types. The matrix
+#' keeps its original type when no value is missing. A column mixing missing
+#' values with literal `"NA"` text, or `NA` with `NaN`, stops with an error
+#' rather than merging them into one group.
 #'
 #' @param input_data distinct combo rows, one per bottom series
 #' @param combo_variables combo variables
@@ -348,6 +358,9 @@ get_grouped_nodes <- function(input_data,
   for (variable in combo_variables) {
     var <- input_data[[variable]]
     check_mixed_missing_labels(var, variable)
+    if (is.numeric(var)) {
+      var[is.nan(var)] <- NA
+    }
 
     group_list <- rbind(group_list, var)
   }

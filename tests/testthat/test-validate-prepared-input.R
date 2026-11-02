@@ -272,6 +272,62 @@ test_that("R12 fails a grouped column mixing missing values and NA text with the
   expect_true(validate_hierarchy(data, "bottoms_up")$passed)
 })
 
+test_that("R12 fails a grouped numeric column mixing NA and NaN, but accepts NaN alone", {
+  mixed <- validation_hierarchy_data(data.frame(Leader = c(NA, NaN, 1, 1), Product = c(10, 20, 10, 20)))
+  result <- validate_hierarchy(mixed, "grouped_hierarchy")
+  expect_equal(check_status(result, "R12"), "fail")
+  expect_match(check_message(result, "R12"), "Combo column 'Leader' contains both NA and NaN values", fixed = TRUE)
+  expect_equal(check_status(validate_hierarchy(mixed, "standard_hierarchy"), "R12"), "pass")
+
+  nan_only <- validation_hierarchy_data(data.frame(Leader = c(NaN, NaN, 1, 1), Product = c(10, 20, 10, 20)))
+  expect_equal(check_status(validate_hierarchy(nan_only, "grouped_hierarchy"), "R12"), "pass")
+})
+
+test_that("R12 fails hierarchy regressors with nonfinite values using the prep_data message", {
+  combos <- data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y"))
+  data <- validation_hierarchy_data(combos)
+  data$Driver <- data$value * 2
+  data$Driver[c(4, 10)] <- c(NA, NaN)
+
+  result <- validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver")
+  expect_false(result$passed)
+  expect_equal(check_status(result, "R12"), "fail")
+  prep_input <- tidyr::unite(data, "Combo", Leader, Product, sep = "--", remove = FALSE)
+  names(prep_input)[names(prep_input) == "value"] <- "Target"
+  testthat::local_mocked_bindings(write_data = function(...) invisible(NULL))
+  prep_error <- tryCatch(
+    prep_hierarchical_data(prep_input, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), "Driver", "grouped_hierarchy", 12),
+    error = conditionMessage
+  )
+  expect_match(prep_error, "External regressor 'Driver' contains nonfinite values", fixed = TRUE)
+  expect_identical(check_message(result, "R12"), prep_error)
+
+  infinite <- data
+  infinite$Driver[10] <- Inf
+  expect_equal(check_status(validate_hierarchy(infinite, "standard_hierarchy", external_regressors = "Driver"), "R12"), "fail")
+
+  # Missing regressor values alone are allowed, and bottoms-up never maps regressors.
+  missing_only <- data
+  missing_only$Driver[10] <- NA
+  expect_equal(check_status(validate_hierarchy(missing_only, "grouped_hierarchy", external_regressors = "Driver"), "R12"), "pass")
+  expect_equal(check_status(validate_hierarchy(data, "bottoms_up", external_regressors = "Driver"), "R12"), "pass")
+})
+
+test_that("R12 ignores regressor values in series that combo_cleanup_date removes", {
+  data <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
+  data$Driver <- data$value * 2
+  removed <- data$Leader == "B" & data$Product == "Y"
+  data$value[removed & data$Date >= as.Date("2023-01-01")] <- 0
+  data$Driver[removed][1] <- NaN
+
+  expect_equal(check_status(validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver"), "R12"), "fail")
+  cleaned <- validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver",
+    combo_cleanup_date = as.Date("2023-01-01"))
+  expect_equal(check_status(cleaned, "R12"), "pass")
+  expect_equal(check_status(cleaned, "P6"), "report")
+})
+
 test_that("R12 fails hierarchy series names that collide after name cleanup", {
   crossed <- validation_hierarchy_data(data.frame(Leader = c("v1.0", "v1.0", "v1_0", "v1_0"),
     Product = c("X", "Y", "X", "Y")))
@@ -306,6 +362,11 @@ test_that("R12 is skipped when the combo values it needs are invalid", {
   result <- validate_hierarchy(data, "grouped_hierarchy")
   expect_equal(check_status(result, "R6"), "fail")
   expect_equal(check_status(result, "R12"), "skipped")
+
+  valid <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
+  duplicated_rows <- validate_hierarchy(rbind(valid, valid[1, ]), "grouped_hierarchy")
+  expect_equal(check_status(duplicated_rows, "R7"), "fail")
+  expect_equal(check_status(duplicated_rows, "R12"), "skipped")
 })
 
 # * Preparation checks P1-P8 ----

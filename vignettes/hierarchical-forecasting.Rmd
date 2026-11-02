@@ -44,9 +44,11 @@ future targets from activity. One retained series selects `bottoms_up`, and no
 retained series produces an error. Character-like labels are trimmed consistently
 with preprocessing; invalid labels and ambiguous combo identities fail explicitly.
 Missing combo values form an `NA` label, matching the `NA` text in `prep_data()`
-combo names, for both standard and grouped hierarchies. A column that holds both
-missing values and the literal text `NA` is ambiguous: detection and grouped
-hierarchies stop with an error, so give one of them a distinct label.
+combo names, for both standard and grouped hierarchies. Grouped hierarchies and
+detection also count numeric `NaN` values as missing. A column that holds both
+missing values and the literal text `NA`, or both numeric `NA` and `NaN`, is
+ambiguous: detection and grouped hierarchies stop with an error, so give one of
+them a distinct label.
 Hierarchy series names
 must stay unique after name cleanup. Combo values that become identical only
 after cleanup (for example `v1.0` and `v1_0`) stop preparation with an error.

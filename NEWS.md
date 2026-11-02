@@ -22,7 +22,7 @@
 - Added `validate_prepared_input()` to check input data against Finn's preparation rules without starting a run or writing files.
   - Reports every failed rule using the messages `prep_data()` would raise, instead of stopping at the first.
   - Also checks that `date_type` matches the date spacing.
-  - For standard and grouped hierarchies, also checks that every series can be named, using the same errors as `prep_data()`.
+  - For hierarchies, also checks every series and external regressor can be prepared, with `prep_data()` errors.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 
 ## Bug Fixes
