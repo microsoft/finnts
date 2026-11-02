@@ -16,8 +16,12 @@
 #'   do not contribute to the cleanup sum.
 #'
 #' @details Character and factor combo boundaries are trimmed using the same
-#'   normalization as [prep_data()]. The caller's data is unchanged. Missing,
-#'   blank, nonfinite, or unsupported combo labels, ambiguous `"--"`-joined
+#'   normalization as [prep_data()]. The caller's data is unchanged. Missing
+#'   combo values, including numeric `NaN`, form an `"NA"` label, as in
+#'   [prep_data()]. A column with both a missing value and the literal text
+#'   `"NA"` (after trimming), or with both numeric `NA` and `NaN`, is ambiguous
+#'   and produces an error.
+#'   Blank, infinite, or unsupported combo labels, ambiguous `"--"`-joined
 #'   combo identities, invalid cleanup inputs, and an empty retained population
 #'   produce errors.
 #'
@@ -82,9 +86,9 @@ detect_hierarchy <- function(input_data,
       (is.object(values) && !is.factor(values))) {
       stop("Unsupported combo column type: ", variable, call. = FALSE)
     }
-    if (anyNA(values) || any(!nzchar(stringr::str_trim(as.character(values)))) ||
-      (is.numeric(values) && any(!is.finite(values)))) {
-      stop("Missing, blank, or nonfinite combo labels in: ", variable, call. = FALSE)
+    if (any(!nzchar(stringr::str_trim(as.character(values))), na.rm = TRUE) ||
+      (is.numeric(values) && any(is.infinite(values)))) {
+      stop("Blank or nonfinite combo labels in: ", variable, call. = FALSE)
     }
   }
   input_data <- normalize_combo_values(input_data, combo_variables)
@@ -92,6 +96,9 @@ detect_hierarchy <- function(input_data,
   combo_ids <- do.call(paste, c(combos, sep = "--"))
   if (anyDuplicated(combo_ids)) {
     stop("Different combo tuples produce the same '--'-joined engine identity.", call. = FALSE)
+  }
+  for (variable in combo_variables) {
+    check_mixed_missing_labels(combos[[variable]], variable)
   }
 
   if (!is.null(combo_cleanup_date)) {

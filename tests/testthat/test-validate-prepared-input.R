@@ -40,7 +40,7 @@ test_that("validate_prepared_input passes clean monthly data", {
   result <- validate_monthly(validation_monthly_data())
 
   expect_true(result$passed)
-  expect_equal(result$checks$Rule, c(paste0("R", 1:11), paste0("P", 1:8)))
+  expect_equal(result$checks$Rule, c(paste0("R", 1:12), paste0("P", 1:8)))
   expect_true(all(result$checks$Status == "pass"))
   expect_equal(result$summary$hist_end_date, as.Date("2023-12-01"))
   expect_equal(result$summary$n_series, 3)
@@ -218,6 +218,155 @@ test_that("check_input_data still stops on the first rule with the same message"
   )
   result <- validate_monthly(data)
   expect_equal(check_message(result, "R5"), "Target variable in input data needs to be numeric")
+})
+
+# Build monthly rows for two-column combos given as a data frame of Leader and
+# Product labels, one row per series. value increases across rows. No I/O.
+validation_hierarchy_data <- function(combos, months = 36) {
+  dates <- seq.Date(as.Date("2021-01-01"), by = "month", length.out = months)
+  data <- merge(combos, data.frame(Date = dates))
+  data$value <- as.numeric(seq_len(nrow(data))) + 10
+  data
+}
+
+validate_hierarchy <- function(data, approach, ...) {
+  validate_monthly(data, combo_variables = c("Leader", "Product"), forecast_approach = approach, ...)
+}
+
+test_that("R12 passes valid hierarchies and does not apply to bottoms_up", {
+  crossed <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"),
+    Product = c("X", "Y", "X", "Y")))
+  nested <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B"),
+    Product = c("X", "Y", "Z")))
+
+  grouped <- validate_hierarchy(crossed, "grouped_hierarchy")
+  expect_true(grouped$passed)
+  expect_equal(check_status(grouped, "R12"), "pass")
+  expect_equal(check_status(validate_hierarchy(nested, "standard_hierarchy"), "R12"), "pass")
+  bottoms_up <- validate_hierarchy(crossed, "bottoms_up")
+  expect_equal(check_status(bottoms_up, "R12"), "pass")
+  expect_match(check_message(bottoms_up, "R12"), "Not applicable to bottoms_up")
+})
+
+test_that("R12 fails a grouped column mixing missing values and NA text with the prep_data message", {
+  combos <- data.frame(Leader = c(NA, "NA", "North", "North"), Product = c("X", "Y", "X", "Y"),
+    stringsAsFactors = FALSE)
+  data <- validation_hierarchy_data(combos)
+  result <- validate_hierarchy(data, "grouped_hierarchy")
+
+  expect_false(result$passed)
+  expect_equal(check_status(result, "R12"), "fail")
+  expect_true(all(result$checks$Status[result$checks$Rule %in% paste0("P", 1:8)] == "skipped"))
+  prep_input <- tidyr::unite(data, "Combo", Leader, Product, sep = "--", remove = FALSE)
+  names(prep_input)[names(prep_input) == "value"] <- "Target"
+  testthat::local_mocked_bindings(write_data = function(...) invisible(NULL))
+  prep_error <- tryCatch(
+    prep_hierarchical_data(prep_input, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "grouped_hierarchy", 12),
+    error = conditionMessage
+  )
+  expect_identical(check_message(result, "R12"), prep_error)
+
+  # Standard hierarchies and bottoms-up forecasts keep the two values apart.
+  expect_equal(check_status(validate_hierarchy(data, "standard_hierarchy"), "R12"), "pass")
+  expect_true(validate_hierarchy(data, "bottoms_up")$passed)
+})
+
+test_that("R12 fails a grouped numeric column mixing NA and NaN, but accepts NaN alone", {
+  mixed <- validation_hierarchy_data(data.frame(Leader = c(NA, NaN, 1, 1), Product = c(10, 20, 10, 20)))
+  result <- validate_hierarchy(mixed, "grouped_hierarchy")
+  expect_equal(check_status(result, "R12"), "fail")
+  expect_match(check_message(result, "R12"), "Combo column 'Leader' contains both NA and NaN values", fixed = TRUE)
+  expect_equal(check_status(validate_hierarchy(mixed, "standard_hierarchy"), "R12"), "pass")
+
+  nan_only <- validation_hierarchy_data(data.frame(Leader = c(NaN, NaN, 1, 1), Product = c(10, 20, 10, 20)))
+  expect_equal(check_status(validate_hierarchy(nan_only, "grouped_hierarchy"), "R12"), "pass")
+})
+
+test_that("R12 fails hierarchy regressors with nonfinite values using the prep_data message", {
+  combos <- data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y"))
+  data <- validation_hierarchy_data(combos)
+  data$Driver <- data$value * 2
+  data$Driver[c(4, 10)] <- c(NA, NaN)
+
+  result <- validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver")
+  expect_false(result$passed)
+  expect_equal(check_status(result, "R12"), "fail")
+  prep_input <- tidyr::unite(data, "Combo", Leader, Product, sep = "--", remove = FALSE)
+  names(prep_input)[names(prep_input) == "value"] <- "Target"
+  testthat::local_mocked_bindings(write_data = function(...) invisible(NULL))
+  prep_error <- tryCatch(
+    prep_hierarchical_data(prep_input, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), "Driver", "grouped_hierarchy", 12),
+    error = conditionMessage
+  )
+  expect_match(prep_error, "External regressor 'Driver' contains nonfinite values", fixed = TRUE)
+  expect_identical(check_message(result, "R12"), prep_error)
+
+  infinite <- data
+  infinite$Driver[10] <- Inf
+  expect_equal(check_status(validate_hierarchy(infinite, "standard_hierarchy", external_regressors = "Driver"), "R12"), "fail")
+
+  # Missing regressor values alone are allowed, and bottoms-up never maps regressors.
+  missing_only <- data
+  missing_only$Driver[10] <- NA
+  expect_equal(check_status(validate_hierarchy(missing_only, "grouped_hierarchy", external_regressors = "Driver"), "R12"), "pass")
+  expect_equal(check_status(validate_hierarchy(data, "bottoms_up", external_regressors = "Driver"), "R12"), "pass")
+})
+
+test_that("R12 ignores regressor values in series that combo_cleanup_date removes", {
+  data <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
+  data$Driver <- data$value * 2
+  removed <- data$Leader == "B" & data$Product == "Y"
+  data$value[removed & data$Date >= as.Date("2023-01-01")] <- 0
+  data$Driver[removed][1] <- NaN
+
+  expect_equal(check_status(validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver"), "R12"), "fail")
+  cleaned <- validate_hierarchy(data, "grouped_hierarchy", external_regressors = "Driver",
+    combo_cleanup_date = as.Date("2023-01-01"))
+  expect_equal(check_status(cleaned, "R12"), "pass")
+  expect_equal(check_status(cleaned, "P6"), "report")
+})
+
+test_that("R12 fails hierarchy series names that collide after name cleanup", {
+  crossed <- validation_hierarchy_data(data.frame(Leader = c("v1.0", "v1.0", "v1_0", "v1_0"),
+    Product = c("X", "Y", "X", "Y")))
+  grouped <- validate_hierarchy(crossed, "grouped_hierarchy")
+  expect_equal(check_status(grouped, "R12"), "fail")
+  expect_match(check_message(grouped, "R12"), "map to the same name")
+  expect_match(check_message(grouped, "R12"), "'v1_0_X'", fixed = TRUE)
+
+  nested <- validation_hierarchy_data(data.frame(Leader = c("v1.0", "v1.0", "v1_0"),
+    Product = c("X", "Y", "X")))
+  expect_equal(check_status(validate_hierarchy(nested, "standard_hierarchy"), "R12"), "fail")
+
+  # Labels that name cleanup still keeps distinct remain valid.
+  distinct <- validation_hierarchy_data(data.frame(Leader = c("A B", "A B", "A-B", "A-B"),
+    Product = c("X", "Y", "X", "Y")))
+  expect_equal(check_status(validate_hierarchy(distinct, "grouped_hierarchy"), "R12"), "pass")
+})
+
+test_that("R12 ignores series that combo_cleanup_date removes, as preparation does", {
+  data <- validation_hierarchy_data(data.frame(Leader = c("v1.0", "v1.0", "v1_0", "v1_0"),
+    Product = c("X", "Y", "X", "Y")))
+  data$value[data$Leader == "v1_0" & data$Date >= as.Date("2023-01-01")] <- 0
+
+  expect_equal(check_status(validate_hierarchy(data, "grouped_hierarchy"), "R12"), "fail")
+  cleaned <- validate_hierarchy(data, "grouped_hierarchy", combo_cleanup_date = as.Date("2023-01-01"))
+  expect_equal(check_status(cleaned, "R12"), "pass")
+  expect_equal(check_status(cleaned, "P6"), "report")
+})
+
+test_that("R12 is skipped when the combo values it needs are invalid", {
+  data <- validation_hierarchy_data(data.frame(Leader = c("A", " "), Product = c("X", "Y")))
+  result <- validate_hierarchy(data, "grouped_hierarchy")
+  expect_equal(check_status(result, "R6"), "fail")
+  expect_equal(check_status(result, "R12"), "skipped")
+
+  valid <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
+  duplicated_rows <- validate_hierarchy(rbind(valid, valid[1, ]), "grouped_hierarchy")
+  expect_equal(check_status(duplicated_rows, "R7"), "fail")
+  expect_equal(check_status(duplicated_rows, "R12"), "skipped")
 })
 
 # * Preparation checks P1-P8 ----

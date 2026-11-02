@@ -1,4 +1,4 @@
-# finnts 0.7.0.9019 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9020 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -14,16 +14,29 @@
 - Added `detect_hierarchy()` for explicit, read-only standard/grouped selection using nesting checks.
   - Optionally cleans inactive series compatibly with preprocessing.
   - Agent detection shares this structural analysis; explicit `prep_data()` choices are unchanged.
+  - Missing combo values form an `"NA"` label, as in `prep_data()` combo names, instead of raising an error.
+  - A column with both missing values and the literal text `"NA"` raises an error instead of merging them.
 - Improved model selection balances accuracy and plausibility, preserves supported growth and seasonality, and rejects invalid predictions.
 - Added the local `naive` model, repeating the last observed value, to default standard runs and every Agent iteration.
 - `update_forecast()` now includes `naive` and `snaive` in default models for new or failed series.
 - Added `validate_prepared_input()` to check input data against Finn's preparation rules without starting a run or writing files.
   - Reports every failed rule using the messages `prep_data()` would raise, instead of stopping at the first.
   - Also checks that `date_type` matches the date spacing.
+  - For hierarchies, also checks every series and external regressor can be prepared, with `prep_data()` errors.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 
 ## Bug Fixes
 
+- Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
+  - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
+  - A combo column with both missing values and literal `"NA"` text now errors instead of merging them.
+  - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
+  - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
+- Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
+  - Previously these series silently received missing regressor values.
+  - Series names are unchanged.
+- Hierarchical preparation now stops with a clear error when two series map to the same name after name cleanup.
+  - For example, combo values differing only by `.` versus `_`. Such series were previously merged silently.
 - Hierarchical reconciliation accepts finite zero and underflowing residual MSE.
   - A numerical floor keeps inverse-MSE weights finite, including discontinued series with zero backtest targets.
   - Existing nonnegative confidence bounds and errors for nonfinite MSE are preserved.

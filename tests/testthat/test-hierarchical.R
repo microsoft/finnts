@@ -370,6 +370,199 @@ test_that("prep_hierarchical_data returns correct standard hierarchies", {
   expect_equal(result_data, expected_data)
 })
 
+# Build crossed monthly Leader x Product rows whose Leader may be missing, as
+# blank spreadsheet cells are read. Combo names follow prep_data()'s
+# tidyr::unite() rule, so a missing Leader becomes the "NA" text prefix. Rows
+# vary fastest by Date, then Product, then Leader; Target is the row number.
+missing_label_hierarchy_data <- function(leaders) {
+  rows <- expand.grid(
+    Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01")),
+    Product = c("X", "Y"), Leader = leaders, stringsAsFactors = FALSE
+  )
+  rows$Target <- as.numeric(seq_len(nrow(rows)))
+  tibble::as_tibble(rows[, c("Leader", "Product", "Date", "Target")]) %>%
+    tidyr::unite("Combo", c("Leader", "Product"), sep = "--", remove = FALSE)
+}
+
+# Prepare a grouped hierarchy from missing-label rows in an isolated local run,
+# then return the saved hts_info object, the aggregated data, and the
+# warnings raised while preparing it.
+prep_missing_label_hierarchy <- function(data, path) {
+  run_info <- artifact_test_run(path)
+  warnings <- character()
+  result <- withCallingHandlers(
+    prep_hierarchical_data(
+      input_data = data,
+      run_info = run_info,
+      combo_variables = c("Leader", "Product"),
+      external_regressors = NULL,
+      forecast_approach = "grouped_hierarchy",
+      frequency_number = 12
+    ),
+    warning = function(w) {
+      warnings <<- c(warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }
+  )
+  hts_info <- readRDS(artifact_test_path(run_info, "prep_data",
+    suffix = "-hts_info", extension = "rds"))
+  list(hts_info = hts_info, data = result, warnings = warnings)
+}
+
+# Reconcile coherent hierarchy values with the grouped structure and the same
+# combinef options production uses; coherent input must return its bottoms.
+expect_grouped_reconciles <- function(prepared) {
+  hts_info <- prepared$hts_info
+  values <- prepared$data %>%
+    dplyr::select(Date, Combo, Target) %>%
+    tidyr::pivot_wider(names_from = Combo, values_from = Target) %>%
+    dplyr::select(tidyselect::all_of(hts_info$hts_combos)) %>%
+    as.matrix()
+  reconciled <- hts::combinef(stats::ts(values),
+    groups = hts_info$nodes, weights = rep(1, ncol(values)),
+    keep = "bottom", nonnegative = TRUE
+  )
+  bottom <- values[, (ncol(values) - length(hts_info$original_combos) + 1):ncol(values)]
+  expect_true(all(is.finite(reconciled)))
+  expect_equal(matrix(as.numeric(reconciled), nrow = nrow(bottom)), unname(bottom),
+    tolerance = 1e-6)
+}
+
+test_that("grouped hierarchy labels missing text combo values as NA and reconciles", {
+  data <- missing_label_hierarchy_data(c("A", "B", NA))
+  prepared <- prep_missing_label_hierarchy(data, withr::local_tempdir())
+  nodes <- prepared$hts_info$nodes
+
+  expect_false(anyNA(nodes))
+  combo_tbl <- dplyr::distinct(data[, c("Leader", "Product")])
+  expect_identical(
+    unname(get_grouped_nodes(combo_tbl, c("Leader", "Product"))["Leader", ]),
+    c("A", "A", "B", "B", "NA", "NA")
+  )
+  expect_false(any(grepl("missing values for 'group'", prepared$warnings, fixed = TRUE)))
+  expect_true(all(c("NA--X", "NA--Y") %in% prepared$hts_info$original_combos))
+  expect_true("Leader_NA" %in% prepared$hts_info$hts_combos)
+
+  # Leader NA rows 13-18: Jan values are 13 (NA--X) and 16 (NA--Y).
+  leader_na <- prepared$data %>%
+    dplyr::filter(Combo == "Leader_NA", Date == as.Date("2020-01-01"))
+  expect_equal(leader_na$Target, 29)
+
+  expect_grouped_reconciles(prepared)
+
+  summary <- summarize_grouped_hierarchy(prepared$hts_info$original_combos,
+    prepared$hts_info$hts_combos, nodes)
+  na_row <- summary[summary$Hierarchy_Level == "Leader_NA", ]
+  expect_equal(nrow(na_row), 1L)
+  expect_identical(na_row$Original_Combos, "NA--X, NA--Y")
+})
+
+test_that("grouped hierarchy labels missing numeric combo values as NA and reconciles", {
+  data <- missing_label_hierarchy_data(c(1, 2, NA))
+  prepared <- prep_missing_label_hierarchy(data, withr::local_tempdir())
+
+  expect_false(anyNA(prepared$hts_info$nodes))
+  expect_true(all(c("NA--X", "NA--Y") %in% prepared$hts_info$original_combos))
+  leader_na <- prepared$data %>%
+    dplyr::filter(Combo == "Leader_NA", Date == as.Date("2020-01-01"))
+  expect_equal(leader_na$Target, 29)
+  expect_grouped_reconciles(prepared)
+})
+
+test_that("grouped nodes without missing values keep their original type", {
+  numeric_combos <- tibble::tibble(Leader = c(1, 1, 2, 2), Product = c(10, 20, 10, 20))
+  nodes <- get_grouped_nodes(numeric_combos, c("Leader", "Product"))
+  expect_true(is.numeric(nodes))
+  expect_equal(unname(nodes["Leader", ]), c(1, 1, 2, 2))
+
+  text_combos <- tibble::tibble(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y"))
+  expect_identical(
+    get_grouped_nodes(text_combos, c("Leader", "Product"))["Leader", ],
+    c("A", "A", "B", "B")
+  )
+})
+
+test_that("standard hierarchy structure is unchanged by missing combo values", {
+  with_missing <- tibble::tibble(Area = c("EMEA", "EMEA", NA), Country = c("Croatia", "Greece", "Other"))
+  with_label <- tibble::tibble(Area = c("EMEA", "EMEA", "ZZZ"), Country = c("Croatia", "Greece", "Other"))
+  expect_identical(
+    get_standard_nodes(with_missing, c("Area", "Country")),
+    get_standard_nodes(with_label, c("Area", "Country"))
+  )
+})
+
+test_that("grouped hierarchy rejects a column mixing missing values and NA text", {
+  combos <- data.frame(Leader = c(NA, "NA", "North", "North"), Product = c("X", "Y", "X", "Y"),
+    stringsAsFactors = FALSE)
+  data <- merge(combos, data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))))
+  data$Target <- as.numeric(seq_len(nrow(data)))
+  data <- tidyr::unite(tibble::as_tibble(data), "Combo", Leader, Product, sep = "--", remove = FALSE)
+  # Series identities stay distinct, so only the group label is ambiguous.
+  expect_equal(dplyr::n_distinct(data$Combo), 4L)
+
+  writes <- 0L
+  testthat::local_mocked_bindings(write_data = function(...) {
+    writes <<- writes + 1L
+    invisible(NULL)
+  })
+  expect_error(
+    prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "grouped_hierarchy", 12),
+    "Combo column 'Leader' contains both missing values and the text \"NA\"", fixed = TRUE
+  )
+  expect_error(get_grouped_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
+  expect_identical(writes, 0L)
+
+  # Standard hierarchies keep the two values as separate parents.
+  standard <- prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+    c("Leader", "Product"), NULL, "standard_hierarchy", 12)
+  expect_false(anyDuplicated(standard[c("Combo", "Date")]) > 0)
+  expect_equal(standard$Target[standard$Combo == "Total" & standard$Date == as.Date("2020-01-01")],
+    sum(data$Target[data$Date == as.Date("2020-01-01")]))
+})
+
+test_that("grouped hierarchy treats NaN-only combo values as missing and reconciles", {
+  data <- missing_label_hierarchy_data(c(1, 2, NaN))
+  prepared <- prep_missing_label_hierarchy(data, withr::local_tempdir())
+
+  expect_false(anyNA(prepared$hts_info$nodes))
+  # Series keep their existing NaN names; the group uses the missing label.
+  expect_true(all(c("NaN--X", "NaN--Y") %in% prepared$hts_info$original_combos))
+  leader_na <- prepared$data %>%
+    dplyr::filter(Combo == "Leader_NA", Date == as.Date("2020-01-01"))
+  expect_equal(leader_na$Target, 29)
+  expect_grouped_reconciles(prepared)
+})
+
+test_that("grouped hierarchy rejects a numeric column mixing NA and NaN", {
+  combos <- data.frame(Leader = c(NA, NaN, 1, 1), Product = c(10, 20, 10, 20))
+  data <- merge(combos, data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))))
+  data$Target <- as.numeric(seq_len(nrow(data)))
+  data <- tidyr::unite(tibble::as_tibble(data), "Combo", Leader, Product, sep = "--", remove = FALSE)
+  # Series identities stay distinct, so only the group label is ambiguous.
+  expect_setequal(unique(data$Combo), c("NA--10", "NaN--20", "1--10", "1--20"))
+
+  writes <- 0L
+  testthat::local_mocked_bindings(write_data = function(...) {
+    writes <<- writes + 1L
+    invisible(NULL)
+  })
+  expect_error(
+    prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "grouped_hierarchy", 12),
+    "Combo column 'Leader' contains both NA and NaN values", fixed = TRUE
+  )
+  expect_error(get_grouped_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
+  expect_identical(writes, 0L)
+
+  # Standard hierarchies keep the two values as separate series.
+  standard <- prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+    c("Leader", "Product"), NULL, "standard_hierarchy", 12)
+  expect_false(anyDuplicated(standard[c("Combo", "Date")]) > 0)
+  expect_equal(standard$Target[standard$Combo == "Total" & standard$Date == as.Date("2020-01-01")],
+    sum(data$Target[data$Date == as.Date("2020-01-01")]))
+})
+
 test_that("prep_hierarchical_data works with more than 10 combo variables", {
   n_dates <- 3
   dates <- seq.Date(as.Date("2020-01-01"), by = "month", length.out = n_dates)

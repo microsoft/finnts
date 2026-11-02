@@ -647,7 +647,11 @@ finn_parse_time <- function(x) {
 
 #' Whether a recorded process is still the same live process
 #'
-#' Compares the creation time to guard against reused process ids.
+#' Compares the creation time to guard against reused process ids. `ps`
+#' reports an exited process as `no_such_process` on Windows, but on Linux it
+#' raises an operating-system error because `/proc/<pid>` is gone. Any other
+#' `ps` error therefore counts as gone only when the pid is absent from the
+#' process table; otherwise liveness stays unknown.
 #'
 #' @param pid Process id.
 #' @param create_time Recorded creation time in epoch seconds.
@@ -670,7 +674,13 @@ finn_pid_alive <- function(pid, create_time = NULL) {
       }
       abs(as.numeric(ps::ps_create_time(h)) - as.numeric(create_time)) < 3
     },
-    error = function(e) if (inherits(e, "no_such_process")) FALSE else NA
+    error = function(e) {
+      if (inherits(e, "no_such_process")) {
+        return(FALSE)
+      }
+      listed <- tryCatch(as.integer(pid) %in% ps::ps_pids(), error = function(e) NA)
+      if (identical(listed, FALSE)) FALSE else NA
+    }
   )
 }
 

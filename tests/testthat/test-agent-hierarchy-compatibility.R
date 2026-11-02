@@ -251,7 +251,7 @@ test_that("legacy labels remain structural labels in Agent analysis", {
   agent <- list(project_info = list(combo_variables = c("A", "B")), run_id = "legacy")
   data <- data.frame(A = c(NA, "n"), B = c("a", "b"))
   expect_identical(hierarchy_detect(agent, data, write_data = FALSE), "standard_hierarchy")
-  expect_error(detect_hierarchy(data, c("A", "B")), "Missing, blank")
+  expect_identical(detect_hierarchy(data, c("A", "B"))$forecast_approach, "standard_hierarchy")
 })
 
 test_that("every outer approach transition rejects predecessor reuse before fitting", {

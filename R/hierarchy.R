@@ -26,33 +26,8 @@ prep_hierarchical_data <- function(input_data,
 
   # initial data prep
   input_data_adj <- input_data %>%
-    adjust_df()
-
-  # If standard hierarchy, arrange data by hierarchy order (top to bottom)
-  if (forecast_approach == "standard_hierarchy") {
-    combo_tbl_temp <- input_data_adj %>%
-      dplyr::select(tidyselect::all_of(combo_variables)) %>%
-      dplyr::distinct()
-
-    hierarchy_length_tbl <- tibble::tibble()
-
-    for (variable in combo_variables) {
-      hierarchy_length_tbl <- rbind(
-        hierarchy_length_tbl,
-        tibble::tibble(
-          Variable = variable,
-          Count = length(unique(combo_tbl_temp[[variable]]))
-        )
-      )
-    }
-
-    hierarchy_order <- hierarchy_length_tbl %>%
-      dplyr::arrange(Count) %>%
-      dplyr::pull(Variable)
-
-    input_data_adj <- input_data_adj %>%
-      dplyr::arrange(dplyr::across(tidyselect::all_of(hierarchy_order)))
-  }
+    adjust_df() %>%
+    arrange_hierarchy_input(combo_variables, forecast_approach)
 
   combo_tbl <- input_data_adj %>%
     dplyr::select(tidyselect::all_of(combo_variables)) %>%
@@ -181,6 +156,85 @@ prep_hierarchical_data <- function(input_data,
   return(return_data)
 }
 
+#' Order input rows for hierarchy construction
+#'
+#' Standard hierarchies need bottom series ordered top to bottom: rows are
+#' arranged by combo variables in increasing distinct-count order, so the
+#' bottom columns match the node counts from `get_standard_nodes()`. Grouped
+#' hierarchies and other approaches keep the input row order.
+#'
+#' @param input_data local data frame containing the combo variables
+#' @param combo_variables combo variables
+#' @param forecast_approach forecast approach
+#'
+#' @return `input_data`, arranged for standard hierarchies. No I/O.
+#' @noRd
+arrange_hierarchy_input <- function(input_data,
+                                    combo_variables,
+                                    forecast_approach) {
+  if (forecast_approach != "standard_hierarchy") {
+    return(input_data)
+  }
+
+  combo_tbl_temp <- input_data %>%
+    dplyr::select(tidyselect::all_of(combo_variables)) %>%
+    dplyr::distinct()
+
+  hierarchy_length_tbl <- tibble::tibble()
+
+  for (variable in combo_variables) {
+    hierarchy_length_tbl <- rbind(
+      hierarchy_length_tbl,
+      tibble::tibble(
+        Variable = variable,
+        Count = length(unique(combo_tbl_temp[[variable]]))
+      )
+    )
+  }
+
+  hierarchy_order <- hierarchy_length_tbl %>%
+    dplyr::arrange(Count) %>%
+    dplyr::pull(Variable)
+
+  input_data %>%
+    dplyr::arrange(dplyr::across(tidyselect::all_of(hierarchy_order)))
+}
+
+#' Build the series names a hierarchy would use, without data or I/O
+#'
+#' Mirrors `prep_hierarchical_data()` on the series structure only: rows are
+#' ordered with `arrange_hierarchy_input()`, nodes come from
+#' `pick_right_hierarchy()`, and names from `hts_node_names()` on an all-zero
+#' two-period panel. Used by `validate_prepared_input()` so validation raises the
+#' same errors as preparation, such as a grouped column mixing missing values and
+#' `"NA"` text, colliding series names, or fewer than two series.
+#'
+#' @param input_data local data frame with a `Combo` column and the combo
+#'   variables, one or more rows per bottom series
+#' @param combo_variables combo variables
+#' @param forecast_approach `"standard_hierarchy"` or `"grouped_hierarchy"`
+#'
+#' @return character vector of hierarchy series names; errors propagate from
+#'   the shared helpers. No I/O.
+#' @noRd
+hierarchy_series_names <- function(input_data,
+                                   combo_variables,
+                                   forecast_approach) {
+  input_data <- arrange_hierarchy_input(input_data, combo_variables, forecast_approach)
+
+  hts_nodes <- input_data %>%
+    dplyr::select(tidyselect::all_of(combo_variables)) %>%
+    dplyr::distinct() %>%
+    pick_right_hierarchy(combo_variables, forecast_approach)
+
+  bottom_combos <- unique(input_data$Combo)
+  bottom_level <- matrix(0, nrow = 2, ncol = length(bottom_combos),
+    dimnames = list(NULL, bottom_combos))
+  hierarchical_object <- get_hts(stats::ts(bottom_level), hts_nodes, forecast_approach)
+
+  hts_node_names(colnames(hts::allts(hierarchical_object)))
+}
+
 #' Return correct data frame format
 #'
 #' @param input_data initial historical data
@@ -243,12 +297,59 @@ pick_right_hierarchy <- function(input_data,
   }
 }
 
+#' Reject a combo column whose missing values cannot be told apart
+#'
+#' Grouped hierarchies and `detect_hierarchy()` treat missing combo values as
+#' the `"NA"` label, and numeric `NaN` as missing. A column holding a missing
+#' value together with the literal text `"NA"`, or numeric `NA` together with
+#' `NaN`, would merge two distinct series groups into one, so it is rejected.
+#' Combo names still distinguish them (`tidyr::unite()` writes `"NA"` and
+#' `"NaN"`), so bottoms-up and standard hierarchies are unaffected.
+#'
+#' @param values combo column values, already whitespace-trimmed when
+#'   character-like; factors are compared by their labels
+#' @param variable combo column name used in the error message
+#'
+#' @return `NULL` invisibly; stops with an actionable error naming the column
+#'   when it mixes either pair. No I/O.
+#' @noRd
+check_mixed_missing_labels <- function(values, variable) {
+  if (is.numeric(values) && any(is.nan(values)) && any(is.na(values) & !is.nan(values))) {
+    stop(
+      "Combo column '", variable, "' contains both NA and NaN values, ",
+      "which a grouped hierarchy treats as one missing label. Use one of them ",
+      "consistently, or replace one with a distinct label.",
+      call. = FALSE
+    )
+  }
+  if (anyNA(values) && any(as.character(values) == "NA", na.rm = TRUE)) {
+    stop(
+      "Combo column '", variable, "' contains both missing values and the text \"NA\", ",
+      "which finnts names identically. Replace the missing values or the \"NA\" text ",
+      "with a distinct label.",
+      call. = FALSE
+    )
+  }
+  invisible(NULL)
+}
+
 #' Grouped hierarchy structure
 #'
-#' @param input_data initial historical data
+#' Builds the group matrix passed to [hts::gts()]: one row per combo variable
+#' and one column per bottom series, in the row order of `input_data`.
+#' Missing combo values, including numeric `NaN`, are stored as the text label
+#' `"NA"`, matching the hts level names (for example `Leader_NA`);
+#' `hts::combinef()` cannot reconcile `NA` group labels. `NaN` is converted per
+#' column so the result does not depend on other columns' types. The matrix
+#' keeps its original type when no value is missing. A column mixing missing
+#' values with literal `"NA"` text, or `NA` with `NaN`, stops with an error
+#' rather than merging them into one group.
+#'
+#' @param input_data distinct combo rows, one per bottom series
 #' @param combo_variables combo variables
 #'
-#' @return hierarchy structure
+#' @return group matrix, with rows reordered and an optional constant guard
+#'   row so [hts::gts()] builds its Total and Bottom levels
 #' @noRd
 get_grouped_nodes <- function(input_data,
                               combo_variables) {
@@ -256,10 +357,20 @@ get_grouped_nodes <- function(input_data,
 
   for (variable in combo_variables) {
     var <- input_data[[variable]]
+    check_mixed_missing_labels(var, variable)
+    if (is.numeric(var)) {
+      var[is.nan(var)] <- NA
+    }
 
     group_list <- rbind(group_list, var)
   }
   rownames(group_list) <- combo_variables
+
+  # Guarded because assigning text coerces a numeric matrix even when no
+  # element is selected.
+  if (anyNA(group_list)) {
+    group_list[is.na(group_list)] <- "NA"
+  }
 
   # Reorder rows to avoid hts::gts() / GmatrixG() dimension mismatch.
   # GmatrixG() conditionally skips adding a "Total" row when the first
@@ -1328,14 +1439,15 @@ external_regressor_mapping <- function(data,
 # Preserve bottom observations and missing bottoms; aggregate missing-only dates
 # remain NA. source_level encodes column names with "---", not source values;
 # tuple identity is assigned by an exact join. Inputs use the exact column order
-# of bottom_level_tbl. No writes.
+# of bottom_level_tbl. Output Combo names come from hts_node_names(), matching
+# sum_hts_data() so regressors join every node. No writes.
 aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
                                           forecast_approach, frequency_number,
                                           source_level, regressor) {
   object <- get_hts(stats::ts(as.matrix(bottom_level_tbl[, -1, drop = FALSE]),
     frequency = frequency_number), nodes, forecast_approach)
   membership <- hts::smatrix(object)
-  node_names <- snakecase::to_any_case(colnames(hts::allts(object)), case = "none")
+  node_names <- hts_node_names(colnames(hts::allts(object)))
   bottom_names <- colnames(bottom_level_tbl)[-1]
   source_columns <- strsplit(source_level, "---", fixed = TRUE)[[1]]
   source_keys <- dplyr::distinct(input_data[, source_columns, drop = FALSE])
@@ -1368,6 +1480,47 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
   dplyr::bind_rows(aggregates, bottoms)
 }
 
+#' Name hierarchy series as finnts saves them
+#'
+#' Converts the column labels of an hts/gts object (for example `Total`,
+#' `Leader/A`, or a bottom combo such as `2024--X`) into the series names used
+#' for `hts_combos`, hierarchical data, and regressor joins. Labels are made
+#' syntactic and unique with [make.names()], exactly as `data.frame()` does, and
+#' then converted with `snakecase::to_any_case(case = "none")`, so existing
+#' names such as `X2024_X` are unchanged. Every caller must use this helper so
+#' all hierarchy tables agree on series names. Labels that [make.names()]
+#' already maps to one string (for example `A B` and `A-B`) keep the existing
+#' behavior: later ones get a numeric suffix (`_1`) in hierarchy order.
+#'
+#' @param hts_labels character vector of `colnames(hts::allts(object))`, in
+#'   hierarchy order
+#'
+#' @return character vector of unique series names in the same order. Errors,
+#'   listing up to five conflicts, when snake-case cleanup maps different series
+#'   to one name (for example labels that differ only by `.` versus `_`), because
+#'   such series would otherwise be silently merged. No I/O.
+#' @noRd
+hts_node_names <- function(hts_labels) {
+  node_names <- snakecase::to_any_case(make.names(hts_labels, unique = TRUE), case = "none")
+  duplicate_names <- unique(node_names[duplicated(node_names)])
+
+  if (length(duplicate_names) > 0) {
+    conflicts <- vapply(duplicate_names, function(name) {
+      paste0(paste0("'", hts_labels[node_names == name], "'", collapse = " and "), " -> '", name, "'")
+    }, character(1))
+
+    stop(
+      "Hierarchy series names must stay unique after name cleanup, but these series map to the same name: ",
+      paste(utils::head(conflicts, 5), collapse = "; "), ". ",
+      "Rename the combo values so they differ by more than punctuation, and so no combo value ",
+      "combined with its column name matches another series name.",
+      call. = FALSE
+    )
+  }
+
+  node_names
+}
+
 #' Create hierarchical aggregations
 #'
 #' @param bottom_level_tbl bottom level table
@@ -1377,7 +1530,9 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
 #' @param frequency_number frequency number
 #' @param return_type return type
 #'
-#' @return data frame of hierarchical aggregations
+#' @return data frame of hierarchical aggregations with series names from
+#'   `hts_node_names()`, or the final hts node structure when `return_type` is
+#'   `"nodes"`
 #' @noRd
 sum_hts_data <- function(bottom_level_tbl,
                          hts_nodes,
@@ -1405,9 +1560,12 @@ sum_hts_data <- function(bottom_level_tbl,
     return(hts_nodes_final)
   }
 
-  hierarchical_tbl <- hierarchical_object %>%
-    hts::allts() %>%
+  all_series <- hts::allts(hierarchical_object)
+  node_names <- hts_node_names(colnames(all_series))
+
+  hierarchical_tbl <- all_series %>%
     data.frame() %>%
+    stats::setNames(node_names) %>%
     tibble::add_column(
       Date = Date,
       .before = 1
@@ -1415,8 +1573,7 @@ sum_hts_data <- function(bottom_level_tbl,
     tidyr::pivot_longer(!Date,
       names_to = "Combo",
       values_to = sum_var
-    ) %>%
-    dplyr::mutate(Combo = snakecase::to_any_case(Combo, case = "none"))
+    )
 
   return(hierarchical_tbl)
 }

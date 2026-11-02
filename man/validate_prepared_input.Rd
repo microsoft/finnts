@@ -60,8 +60,10 @@ existing series, and does not add new values onto the beginning or end, but does
 values.}
 
 \item{forecast_approach}{Forecast approach, as passed to \code{\link[=prep_data]{prep_data()}}.
-It is validated but does not change the checks: every approach expects
-bottom-level series, so totals mixed with their parts fail \code{P7} for all.}
+It only changes \code{R12}, which builds the hierarchy's series names and maps
+external regressors for standard and grouped hierarchies. Every approach
+expects bottom-level series, so totals mixed with their parts fail \code{P7}
+for all.}
 
 \item{parallel_processing}{Default of NULL runs no parallel processing and forecasts each individual time series
 one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
@@ -94,7 +96,7 @@ reports how preparation will treat the data, without starting a run or
 writing anything to disk.
 }
 \details{
-Input rules \code{R1}-\code{R8}, \code{R10} and \code{R11} reuse the checks in \code{\link[=prep_data]{prep_data()}},
+Input rules \code{R1}-\code{R8} and \code{R10}-\code{R12} reuse the checks in \code{\link[=prep_data]{prep_data()}},
 so a failure here carries the same message \code{prep_data()} would raise. \code{R9}
 is stricter than \code{prep_data()}: it also checks that \code{date_type} matches the
 spacing of the dates. Preparation checks
@@ -117,6 +119,12 @@ Rules:
 \item \code{R9} \code{date_type} is valid and is not finer or coarser than the data.
 \item \code{R10} \code{fiscal_year_start} is a number from 1 to 12.
 \item \code{R11} Spark tables run with Spark parallel processing.
+\item \code{R12} standard and grouped hierarchies can name every series and map every
+external regressor: no grouped combo column mixes missing values with the
+text \code{"NA"} or numeric \code{NA} with \code{NaN}, no two series map to the same name
+after name cleanup, at least two series remain after \code{combo_cleanup_date},
+and no external regressor has \code{NaN}, infinite or conflicting values or an
+ambiguous source level. Always passes for \code{bottoms_up}.
 \item \code{P1} history end date and the rows treated as future periods.
 \item \code{P2} external regressors with future values and their coverage.
 \item \code{P3} missing periods that preparation pads.
