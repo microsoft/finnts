@@ -1210,7 +1210,8 @@ with(common, {
       has(upd, "| | This update | Last run | Setting |") &&
         has(upd, "| Forecast type | **Agent update** with your new actuals | Agent iterate (version 1, up to 3 iterations) | `mode` = `\"agent\"` |") &&
         !has(upd, "### Ways to get more from this run"))
-    cont_run <- list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3, launch = "--mode=iterate")
+    cont_run <- list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3, launch = "--mode=iterate",
+      continuation_kind = "continue")
     cont_review <- vc$validate_settings_review(modifyList(agent, list(agent = list(max_iter = 5))), facts, list(),
       run = cont_run, last_run = agent_last)
     check("same version: only the search budget and goal can change",
@@ -1234,6 +1235,23 @@ with(common, {
       has(other_review, "| Forecast type | **Agent iterate**, needs a new Agent version because other settings changed |") &&
         has(section(other_review, "Settings to review"), "Other settings changed, so this run needs a new Agent version") &&
         !has(other_review, "This run continues your current Agent version"))
+    after_update <- list(run_type = "iterate", situation = "agent_current", launch = "--mode=iterate", prior_max_iter = 3,
+      prior_weighted_mape_goal = 0.03, continuation = NULL, last_runs = list(agent = list(mode = "update")))
+    ri_update <- vc$validate_run_info(after_update, "iterate", agent)
+    check("run info: after an Agent update, iterate cannot continue the version",
+      is.null(ri_update$prior_max_iter) && is.null(ri_update$prior_weighted_mape_goal) &&
+        identical(ri_update$continuation_kind, "last_update"))
+    ri_continue <- vc$validate_run_info(modifyList(after_update, list(continuation = list(kind = "continue"),
+      last_runs = list(agent = list(mode = "iterate")))), "iterate", agent)
+    check("run info: a continuable iterate version keeps its prior budget and goal",
+      identical(ri_continue$prior_max_iter, 3) && identical(ri_continue$prior_weighted_mape_goal, 0.03) &&
+        identical(ri_continue$continuation_kind, "continue"))
+    update_last_review <- vc$validate_settings_review(agent, facts, list(), run = ri_update, last_run = agent_last)
+    check("same version: after an Agent update the review says a new Agent version is needed",
+      has(update_last_review, "| Forecast type | **Agent iterate**, needs a new Agent version because your last Agent forecast was an update |") &&
+        has(section(update_last_review, "Settings to review"), "Your last Agent forecast was an update, so this Agent version can't search further.") &&
+        !has(update_last_review, "This run continues your current Agent version") &&
+        !has(update_last_review, "Your last Agent search ran up to") && !has(update_last_review, "iterations`."))
     check("tips: example replies for drivers and a longer outlook",
       has(section(glance, "Ways to get more from this run"),
         "You're using Promo|Flag as a driver. If another column in your file moves with `Sales`, say `also use <column> as a driver`.") &&
@@ -2026,6 +2044,9 @@ with(launch, {
     check("preview names the next run type for an existing standard project",
       identical(card$data$run$run_type, "standard") && grepl("^standard_", card$data$run$situation) &&
         grepl("next **Standard** forecast for existing project `First`", card$data$settings_review, fixed = TRUE))
+    check("preview compares with the last finished standard run",
+      grepl("| | This run | Last run | Setting |", card$data$settings_review, fixed = TRUE) &&
+        grepl("| Forecast type | **Standard** | Standard | ", card$data$settings_review, fixed = TRUE))
     preview$finn_main <- function(fn) fn(list(root = entry_root, project = "First", batch_size = "3", run_type = "update"))
     preview$finn_check_config <- function(cfg, data, root) list(errors = character())
     upd_card <- eval(preview_expr, preview)

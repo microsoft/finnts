@@ -333,10 +333,13 @@ validate_new_project_alternative <- function(run_type, rec = NULL) {
 #' @param cfg Merged config, used for the run type hint.
 #' @param rec Result of [finn_recommend_settings()], or NULL.
 #' @return List with `run_type`, `label`, `hint`, `situation`, `why`,
-#'   `alternative`, `launch`, `recommended_run_type`, and `prior_max_iter`,
-#'   `prior_weighted_mape_goal`, and `continuation_kind` (the `kind` from
-#'   [finn_iterate_continuation()]; all three set only when an iterate run can
-#'   continue the current Agent version).
+#'   `alternative`, `launch`, `recommended_run_type`, `prior_max_iter` and
+#'   `prior_weighted_mape_goal` (set only when an iterate run can continue the
+#'   current Agent version, that is when [finn_next_run()] returned a
+#'   `continuation`), and `continuation_kind` for an iterate run on a current
+#'   Agent version: the `kind` from [finn_iterate_continuation()], or
+#'   `"last_update"` when the latest Agent forecast was an update, which no
+#'   iterate run can continue.
 validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
   recommended <- next_run$run_type
   situation <- next_run$situation
@@ -358,12 +361,16 @@ validate_run_info <- function(next_run, run_type, cfg, rec = NULL) {
       paste0("--mode=", run_type)
     }
   }
+  iterate_current <- identical(situation, "agent_current") && identical(run_type, "iterate")
+  cont <- if (iterate_current) next_run$continuation
   list(run_type = run_type, label = finn_run_type_label(run_type), hint = finn_run_type_hint(run_type, cfg),
     situation = situation, why = why, alternative = alternative, launch = launch,
     recommended_run_type = recommended,
-    prior_max_iter = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_max_iter,
-    prior_weighted_mape_goal = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$prior_weighted_mape_goal,
-    continuation_kind = if (identical(situation, "agent_current") && identical(run_type, "iterate")) next_run$continuation$kind)
+    prior_max_iter = if (!is.null(cont)) next_run$prior_max_iter,
+    prior_weighted_mape_goal = if (!is.null(cont)) next_run$prior_weighted_mape_goal,
+    continuation_kind = if (iterate_current) {
+      cont$kind %||% if (identical(next_run$last_runs$agent$mode, "update")) "last_update"
+    })
 }
 
 #' Caller instruction for the other option in a review
@@ -637,24 +644,28 @@ validate_new_version <- function(run, run_type) {
 #' Whether an Agent iterate review is for the current Agent version
 #'
 #' True for an iterate run on a project whose finished Agent version has no
-#' newer actuals (situation `agent_current`), unless the launch starts a new
-#' version. Whether it actually continues depends on `run$continuation_kind`.
+#' newer actuals (situation `agent_current`) and a known
+#' `run$continuation_kind`, unless the launch starts a new version. Whether
+#' it actually continues depends on that kind.
 #'
 #' @param run Run info from [validate_run_info()], or NULL.
 #' @param run_type Run type under review.
 #' @return Logical.
 validate_current_version <- function(run, run_type) {
-  identical(run_type, "iterate") && identical(run$situation, "agent_current") && !is.null(run$prior_max_iter) &&
+  identical(run_type, "iterate") && identical(run$situation, "agent_current") && !is.null(run$continuation_kind) &&
     !validate_new_version(run, run_type)
 }
 
 #' Whether an Agent iterate review continues the current Agent version
 #'
+#' Other changed settings, or a latest Agent forecast that was an update,
+#' mean the run needs a new Agent version instead.
+#'
 #' @param run Run info from [validate_run_info()], or NULL.
 #' @param run_type Run type under review.
 #' @return TRUE when only the search budget or goal changes on that version.
 validate_continuing <- function(run, run_type) {
-  validate_current_version(run, run_type) && !identical(run$continuation_kind, "other_changes")
+  validate_current_version(run, run_type) && !isTRUE(run$continuation_kind %in% c("other_changes", "last_update"))
 }
 
 #' Forecast type cell for the at-a-glance table
@@ -673,6 +684,8 @@ validate_forecast_type_text <- function(cfg, run, run_type) {
   }
   if (validate_new_version(run, run_type)) {
     "**Agent iterate**, new Agent version (the search starts over)"
+  } else if (validate_current_version(run, run_type) && identical(run$continuation_kind, "last_update")) {
+    "**Agent iterate**, needs a new Agent version because your last Agent forecast was an update"
   } else if (validate_current_version(run, run_type) && !validate_continuing(run, run_type)) {
     "**Agent iterate**, needs a new Agent version because other settings changed"
   } else if (validate_continuing(run, run_type)) {
@@ -872,6 +885,11 @@ validate_version_rule <- function(run, run_type) {
   if (!validate_current_version(run, run_type)) {
     return(NULL)
   }
+  if (identical(run$continuation_kind, "last_update")) {
+    return(paste("Your last Agent forecast was an update, so this Agent version can't search further.",
+      "Any iterate run, including one with more **Max iterations**, needs a new Agent version, which restarts the search",
+      "and needs your confirmation."))
+  }
   if (!validate_continuing(run, run_type)) {
     return(paste("Only **Max iterations** and **Accuracy goal** can change on your current Agent version.",
       "Other settings changed, so this run needs a new Agent version, which restarts the search and needs your confirmation."))
@@ -939,8 +957,10 @@ validate_settings_sections <- function(cfg, facts, run, run_type) {
 #' Suggests adding drivers and forecasting through the end of the fiscal year
 #' that holds the period after the forecast (not for Agent updates or a
 #' continued Agent version, where those changes need a new version), a longer
-#' Agent search for iterate runs, and asking where custom models helped for
-#' Agent runs. SKILL.md maps each reply to its config setting.
+#' Agent search for iterate runs (except when the latest Agent forecast was an
+#' update, so more iterations cannot continue that version), and asking where
+#' custom models helped for Agent runs. SKILL.md maps each reply to its config
+#' setting.
 #'
 #' @param cfg Merged config.
 #' @param facts Data facts from [finn_check_config()].
@@ -966,7 +986,7 @@ validate_review_tips <- function(cfg, facts, run, run_type) {
         month.abb[[if (fys == 1) 12L else fys - 1L]], validate_fiscal_year(validate_shift_period(window$end, cfg$date_type, 1), fys)))
     }
   }
-  if (identical(run_type, "iterate")) {
+  if (identical(run_type, "iterate") && !identical(run$continuation_kind, "last_update")) {
     more <- suppressWarnings(as.numeric(unlist(cfg$agent$max_iter %||% 3))[1]) + 2
     if (!is.na(more)) {
       tips <- c(tips, sprintf("Want the Agent to search longer? Say `use %s iterations`. Each extra iteration adds run time and AI model requests.",

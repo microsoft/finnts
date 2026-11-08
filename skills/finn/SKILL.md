@@ -168,7 +168,9 @@ Do not change the finnts package version for a skill-only change.
    ask for the full configuration). Map the review's example replies to exact settings:
    `use <column> as a driver` adds that file column to `external_regressors`;
    `forecast through <month> <year>` sets `forecast_horizon` to the number of periods
-   after `hist_end_date` through that month; `use <N> iterations` sets `agent.max_iter`.
+   from the end of history (the last period in the review's "History used" row, which
+   also covers an unset `hist_end_date`) through that month; `use <N> iterations` sets
+   `agent.max_iter`.
    Ask instead of guessing when a reply does not map to one setting. Save with
    `--save=true --run_type=<choice>` only after the user replies `run` or otherwise agrees.
 6. Launch with `run_forecast.R --project=<name>` plus the arguments in `data.run.launch`,
