@@ -7,7 +7,7 @@ first sentence; add the second only if they ask for more.
 |---|---|
 | **Series** (combo) | One line you want forecast, such as "East / Laptops revenue". Finn names it by joining the series columns with `--`. |
 | **Horizon** | How many periods ahead to forecast, such as 12 months. |
-| **History** / `hist_end_date` | The past actuals Finn learns from. `hist_end_date` is the last period with actuals; rows after it are treated as future driver values. |
+| **History** / `hist_end_date` | The past actuals Finn learns from. `hist_end_date` is the last period with actuals; rows after it are treated as future driver values. When it is unset, every run type uses the latest date in the file, including rows that only carry driver values, so set it to the last actuals when the file has future driver rows. |
 | **Back test** | Pretending it is an earlier date, forecasting periods whose actuals are already known, and scoring the result. This is how Finn judges models fairly. |
 | **WMAPE** | Weighted mean absolute percentage error: the average miss as a percentage of actuals, with bigger series counting more. Lower is better; 10% means forecasts were off by about 10% on average. |
 | **Accuracy** | An easier way to say it: 100% minus WMAPE, so a 10% WMAPE is roughly 90% accurate. Finn's outputs report WMAPE itself. |

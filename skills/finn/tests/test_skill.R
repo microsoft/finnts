@@ -1061,10 +1061,10 @@ with(common, {
     check("settings review: a standard null hist_end_date names the latest date in the file and offers a cutoff",
       has(review, "`hist_end_date` is `null`. Auto uses `2023-06-01`, the latest date in the file") &&
         has(review, "set it to `2022-12-01`") && !has(review, "Auto uses `2022-12-01`"))
-    check("settings review: hist_end_date explanation names what null means for each mode",
+    check("settings review: hist_end_date explanation says null means the latest date in the file for every mode",
       has(vc$validate_field_explanation("hist_end_date", config, facts), "or `null` for the latest date in the file.") &&
         has(vc$validate_field_explanation("hist_end_date", modifyList(config, list(mode = "agent")), facts),
-          "or `null` for the last period with actuals."))
+          "or `null` for the latest date in the file."))
     flat <- vc$validate_settings_review(config, modifyList(facts, list(date_max = "2022-12-01")), list())
     check("settings review: a standard null hist_end_date needs no cutoff advice when the file ends with actuals",
       has(flat, "| History used | **through Dec 2022** (automatic) | `hist_end_date` = `null` |") &&
@@ -1100,9 +1100,14 @@ with(common, {
         has(section(agent_review, "Settings to review"), "(`llm`)"))
     check("settings review: hidden internals are not shown",
       !has(review, "`seed`") && !has(review, "`parallel`"))
-    check("settings review: an Agent null hist_end_date ends history at its last period with actuals",
-      has(agent_review, "| History used | **through Dec 2022** (automatic) | `hist_end_date` = `null` |") &&
-        !has(agent_review, "the latest date in the file"))
+    check("settings review: an Agent null hist_end_date ends history at the latest date in the file, as Agent runs do",
+      has(agent_review, "| History used | **through Jun 2023** (automatic) | `hist_end_date` = `null` |") &&
+        has(agent_review, "`hist_end_date` is `null`. Auto uses `2023-06-01`, the latest date in the file") &&
+        has(agent_review, "set it to `2022-12-01`"))
+    check("resolved history end: an unset hist_end_date uses the latest file date for every run type",
+      identical(vc$validate_resolved_hist_end(config, facts), "2023-06-01") &&
+        identical(vc$validate_resolved_hist_end(agent, facts), "2023-06-01") &&
+        identical(vc$validate_resolved_hist_end(modifyList(agent, list(hist_end_date = "2022-12-01")), facts), "2022-12-01"))
 
     update_run <- list(run_type = "update", label = "Agent update", hint = finn_run_type_hint("update"),
       situation = "agent_refresh", why = "Your last Agent forecast used actuals through `2022-06-01`.",
@@ -1311,6 +1316,10 @@ with(common, {
     check("history facts: hist_start_date trims the span",
       identical(trimmed$history_start, "2022-01-01") && identical(trimmed$history_periods, 12L) && is.null(trimmed$new_actuals))
     check("history facts: unreadable data never blocks the review", identical(vc$validate_history_facts(NULL, config, "2022-12-01"), list()))
+    driver_rows <- vc$validate_history_facts(hist_data, config, "2023-03-01", "2022-06-01")
+    check("history facts: periods in the window include rows that only carry driver values",
+      identical(driver_rows$history_start, "2021-01-01") && identical(driver_rows$history_periods, 27L) &&
+        identical(driver_rows$new_actuals, list(count = 6L, first = "2022-07-01", last = "2022-12-01")))
     lr <- list(standard = list(run_id = "std-1", mode = "standard", end = "2023-12-01", config = list(mode = "standard", forecast_horizon = 6)),
       agent = NULL)
     check("last run: picks the same run type's last finished run",

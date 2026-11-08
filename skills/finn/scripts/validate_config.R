@@ -182,27 +182,27 @@ validate_escape_cell <- function(x) {
 
 #' What `hist_end_date = null` resolves to
 #'
-#' Standard runs end history at the latest Date in the input file, including
-#' rows that only carry driver values; Agent runs end it at the last period
-#' with actuals. When the two differ, a Standard review offers the last
-#' actuals as an explicit cutoff.
+#' Standard and Agent runs both end history at the latest Date in the input
+#' file, including rows that only carry driver values: the worker passes the
+#' full data and a null cutoff to `prep_data()` and `set_agent_info_custom()`.
+#' When that differs from the last period with actuals, the review offers the
+#' last actuals as an explicit cutoff.
 #'
-#' @param standard Whether the config is a Standard run.
 #' @param facts Data facts from [finn_check_config()].
 #' @return Sentence(s), or NULL when the facts do not say.
-validate_auto_hist_end <- function(standard, facts) {
+validate_auto_hist_end <- function(facts) {
   latest <- facts$date_max
   actual <- facts$last_actual_date
-  if (standard && !is.null(latest)) {
-    if (!is.null(actual) && !identical(as.character(actual), as.character(latest))) {
-      return(sprintf(paste(
-        "Auto uses `%s`, the latest date in the file, including rows that only carry driver values.",
-        "To end history at the last actuals instead, set it to `%s`."
-      ), latest, actual))
-    }
-    return(sprintf("Auto uses `%s`, the latest date in the file.", latest))
+  if (is.null(latest)) {
+    return(if (!is.null(actual)) sprintf("Auto uses `%s`.", actual))
   }
-  if (!is.null(actual)) sprintf("Auto uses `%s`.", actual)
+  if (!is.null(actual) && !identical(as.character(actual), as.character(latest))) {
+    return(sprintf(paste(
+      "Auto uses `%s`, the latest date in the file, including rows that only carry driver values.",
+      "To end history at the last actuals instead, set it to `%s`."
+    ), latest, actual))
+  }
+  sprintf("Auto uses `%s`, the latest date in the file.", latest)
 }
 
 #' Plain-language meaning of one review setting
@@ -223,10 +223,7 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
     target_variable = "The column in your file that Finn forecasts.",
     combo_variables = "The columns that split your data into separate time series; Finn forecasts each combination.",
     date_type = "The period length used for history, back tests, and forecasts.",
-    hist_end_date = paste0(
-      "The last period treated as actuals; the forecast starts after it, or `null` for ",
-      if (identical(cfg$mode, "standard")) "the latest date in the file." else "the last period with actuals."
-    ),
+    hist_end_date = "The last period treated as actuals; the forecast starts after it, or `null` for the latest date in the file.",
     forecast_horizon = "How many periods Finn forecasts after `hist_end_date`.",
     external_regressors = paste("Columns from your file that help explain changes in the target, or `null` for none.",
       "Custom models need complete history for all declared drivers, but future values only for",
@@ -263,7 +260,7 @@ validate_field_explanation <- function(key, cfg, facts = list(), run = NULL) {
   value <- validate_field_value(cfg, key)
   if (is.null(value)) {
     auto <- switch(key,
-      hist_end_date = validate_auto_hist_end(identical(cfg$mode, "standard"), facts),
+      hist_end_date = validate_auto_hist_end(facts),
       run_ensemble_models = if (identical(cfg$mode, "standard")) "Auto may enable ensembles; set it to `false` unless you asked for ensemble models.",
       date_format = if (!is.null(facts$date_format)) sprintf("Auto-detected `%s`.", facts$date_format),
       decimal_mark = if (!is.null(facts$decimal_mark)) sprintf("Auto-detected `%s`.", facts$decimal_mark),
@@ -561,21 +558,27 @@ validate_fiscal_suffix <- function(end, date_type, fys) {
 
 #' Date history ends at for this review
 #'
+#' Standard and Agent runs resolve an unset `hist_end_date` the same way: to
+#' the latest date in the file (see [validate_auto_hist_end()]).
+#'
 #' @param cfg Merged config.
 #' @param facts Data facts from [finn_check_config()].
-#' @return `hist_end_date` when set; otherwise the date `null` resolves to
-#'   (see [validate_auto_hist_end()]). Text, or NULL when unknown.
+#' @return `hist_end_date` when set; otherwise the latest date in the file,
+#'   or the last period with actuals when the file's dates are unknown. Text,
+#'   or NULL when unknown.
 validate_resolved_hist_end <- function(cfg, facts) {
-  end <- cfg$hist_end_date %||% (if (identical(cfg$mode, "standard")) facts$date_max else facts$last_actual_date)
+  end <- cfg$hist_end_date %||% facts$date_max %||% facts$last_actual_date
   if (is.null(end) || !length(end)) NULL else as.character(unlist(end)[[1]])
 }
 
 #' Display-only history facts for the review
 #'
-#' Counts the distinct periods with actuals from the first period used
-#' (`hist_start_date`, or the first actual) through `hist_end`, and the new
-#' actuals after the last run's history end. Never blocks the review: an
-#' unreadable input returns an empty list.
+#' Counts the distinct periods in the history window, from the first period
+#' used (`hist_start_date`, or the first actual) through `hist_end`. The
+#' window includes rows that only carry driver values, because runs train on
+#' every period up to the cutoff. Also counts the new actuals after the last
+#' run's history end. Never blocks the review: an unreadable input returns an
+#' empty list.
 #'
 #' @param data Checked data frame with a `Date` column, or NULL.
 #' @param cfg Merged config.
@@ -588,11 +591,12 @@ validate_history_facts <- function(data, cfg, hist_end, prior_end = NULL) {
   tryCatch({
     dates <- as.Date(data$Date)
     actual <- sort(unique(dates[!is.na(dates) & !is.na(data[[cfg$target_variable]])]))
+    periods <- sort(unique(dates[!is.na(dates)]))
     end <- validate_as_date(hist_end)
     out <- list()
     if (length(actual) && !is.null(end)) {
       start <- max(actual[[1]], validate_as_date(cfg$hist_start_date) %||% actual[[1]])
-      used <- actual[actual >= start & actual <= end]
+      used <- periods[periods >= start & periods <= end]
       if (length(used)) out <- list(history_start = as.character(used[[1]]), history_periods = length(used))
       prior <- validate_as_date(prior_end)
       new <- if (!is.null(prior)) actual[actual > prior & actual <= end] else actual[0]
@@ -1079,10 +1083,10 @@ validate_settings_review <- function(cfg, facts, plan, rec = NULL, warnings = ch
   }
   sections <- c(sections, validate_data_check(cfg, facts, rec, warnings, notes))
 
-  cutoff <- identical(cfg$mode, "standard") && is.null(cfg$hist_end_date) && !is.null(facts$last_actual_date) &&
+  cutoff <- is.null(cfg$hist_end_date) && !is.null(facts$last_actual_date) &&
     !is.null(facts$date_max) && !identical(as.character(facts$last_actual_date), as.character(facts$date_max))
   sections <- c(sections, validate_heads_up(c(
-    if (cutoff) paste("`hist_end_date` is `null`.", validate_auto_hist_end(TRUE, facts)),
+    if (cutoff) paste("`hist_end_date` is `null`.", validate_auto_hist_end(facts)),
     warnings,
     if (validate_new_version(run, run_type)) {
       paste("This run starts a **new Agent version**. The search starts over instead of building on earlier runs,",
