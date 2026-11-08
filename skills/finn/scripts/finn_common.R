@@ -7,7 +7,7 @@
 #    "next_actions": [...]}
 # Coding agents read only that final line. Nothing here deletes files.
 
-finn_skill_version <- "0.3.2"
+finn_skill_version <- "0.3.3"
 finn_schema_version <- 1L
 
 #' Null-coalescing helper
@@ -2553,7 +2553,12 @@ finn_stopped_iterate_revision <- function(latest, cfg) {
 #'   `custom_models_changed` (list with `previous` and `new` custom model
 #'   labels when they differ from the last Agent forecast, else NULL),
 #'   `new_version` (TRUE when the recommended launch starts a new Agent
-#'   version; absent otherwise), and
+#'   version; absent otherwise),
+#'   `last_runs` (list with `standard` and `agent`: the last finished
+#'   standard run and the last finished Agent forecast, each with `run_id`,
+#'   `mode`, `created_at`, `end` (its history end), `config`, and
+#'   `agent_version` for Agent runs, or NULL; display-only, taken from the
+#'   run states already listed), and
 #'   `recommendations` (each `key`, `value`, `reason`).
 finn_next_run <- function(paths, cfg, facts = list()) {
   runs <- Filter(function(s) !identical(s$effective_status, "unreadable"), finn_list_runs(paths))
@@ -2669,6 +2674,18 @@ finn_next_run <- function(paths, cfg, facts = list()) {
   if (!is.null(left_out) && !identical(out$situation, "resume") && !is.null(out$why)) {
     out$why <- paste(out$why, sprintf("The `%s` period has not ended yet, so `hist_end_date` leaves it out.", left_out))
   }
+  # Summarizes one finished run for the settings review's Last run column.
+  run_summary <- function(state, end) {
+    if (is.null(state)) {
+      return(NULL)
+    }
+    list(run_id = state$run_id, mode = state$mode, created_at = state$created_at, end = end %||% state$data_end,
+      config = state[["config", exact = TRUE]], agent_version = if (!identical(state$mode, "standard")) last_agent$agent_version)
+  }
+  last_standard <- Find(function(s) identical(s$mode, "standard"), completed)
+  last_agent_state <- if (agent_done && !is.null(last_agent$run_id)) Find(function(s) identical(s$run_id, last_agent$run_id), runs)
+  out$last_runs <- list(standard = run_summary(last_standard, last_standard$data_end),
+    agent = run_summary(last_agent_state, last_agent$hist_end_date))
   out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else if (isTRUE(out$new_version)) {
     "--mode=iterate --new=true --confirm=true"
   } else switch(out$run_type,

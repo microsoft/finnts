@@ -1030,50 +1030,78 @@ with(common, {
     facts <- list(n_rows = 120, n_columns = 5, n_series = 4, date_min = "2021-01-01", date_max = "2023-06-01",
       last_actual_date = "2022-12-01")
     review <- vc$validate_settings_review(config, facts, list(reason = "offline plan"), big, "Low RAM.", "Read with a comma.")
+    # Text of one `### ` section, up to the next `### ` heading or the end.
+    section <- function(text, title) {
+      start <- regexpr(paste0("### ", title, "\n"), text, fixed = TRUE)[[1]]
+      if (start < 0) return("")
+      rest <- substring(text, start + nchar(title) + 5)
+      end <- regexpr("\n### ", rest, fixed = TRUE)[[1]]
+      if (end < 0) rest else substring(rest, 1, end)
+    }
     order <- vapply(c("Here are the proposed **Standard** forecast settings for project `demo`.", "- **Run type:** Standard.",
-      "### Data check", "### Forecast configuration", "### Warnings", "### Suggestions", "### On this computer",
+      "### Your forecast at a glance", "**Data check:**", "**Heads up", "### Settings to review", "### Suggestions",
+      "### Ways to get more from this run", "### On this computer", "### Everything else uses Finn's defaults",
       "Reply `run` to start the forecast"), function(p) regexpr(p, review, fixed = TRUE)[[1]], numeric(1))
-    check("settings review: section order with run footer", length(review) == 1 && all(order > 0) && !is.unsorted(order))
-    check("settings review: configuration table header",
-      has(review, "| Input | Recommended value | What it means for your forecast |\n|---|---|---|"))
+    check("settings review: grouped section order with run footer", length(review) == 1 && all(order > 0) && !is.unsorted(order))
+    check("settings review: the flat configuration table is gone",
+      !has(review, "### Forecast configuration") && !has(review, "| Input | Recommended value |"))
+    check("settings review: at-a-glance, review, and defaults table headers",
+      has(review, "### Your forecast at a glance\n\n| | Plan | Setting |\n|---|---|---|") &&
+        has(review, "| Setting | Value | What it means |\n|---|---|---|") &&
+        has(review, "| Category | Setting | Value |\n|---|---|---|"))
     check("settings review: JSON values for arrays, strings, booleans, and null",
-      has(review, "| `combo_variables` | `[\"Region\",\"Product\"]` |") && has(review, "| `target_variable` | `\"Sales\"` |") &&
-        has(review, "| `negative_forecast` | `false` |") && has(review, "| `hist_start_date` | `null` |"))
+      has(review, "`combo_variables` = `[\"Region\",\"Product\"]`") && has(review, "`target_variable` = `\"Sales\"`") &&
+        has(review, "| Forecast rules | Allow negative forecasts (`negative_forecast`) | `false` |") &&
+        has(review, "| History & series | First period of history (`hist_start_date`) | `null` (earliest available) |"))
     check("settings review: pipes in values are escaped", has(review, "`[\"Promo\\|Flag\"]`"))
-    check("settings review: data check shows last actuals and notes",
-      has(review, "**Last period with actuals:** `2022-12-01`") && has(review, "- Read with a comma.") &&
-        has(review, "passed with 1 warning`"))
+    check("settings review: data check shows last actuals and notes on one line",
+      has(review, "**Data check:** 120 rows, 5 columns, 4 series; dates `2021-01-01` to `2023-06-01`;") &&
+        has(review, "last period with actuals `2022-12-01` (later rows only carry driver values)") &&
+        has(review, "- Read with a comma.") && has(review, "validation passed with 1 warning."))
     check("settings review: a standard null hist_end_date names the latest date in the file and offers a cutoff",
-      has(review, "Auto uses `2023-06-01`, the latest date in the file") && has(review, "set it to `2022-12-01`") &&
-        !has(review, "Auto uses `2022-12-01`") && has(review, "or `null` for the latest date in the file."))
+      has(review, "`hist_end_date` is `null`. Auto uses `2023-06-01`, the latest date in the file") &&
+        has(review, "set it to `2022-12-01`") && !has(review, "Auto uses `2022-12-01`"))
+    check("settings review: hist_end_date explanation names what null means for each mode",
+      has(vc$validate_field_explanation("hist_end_date", config, facts), "or `null` for the latest date in the file.") &&
+        has(vc$validate_field_explanation("hist_end_date", modifyList(config, list(mode = "agent")), facts),
+          "or `null` for the last period with actuals."))
     flat <- vc$validate_settings_review(config, modifyList(facts, list(date_max = "2022-12-01")), list())
     check("settings review: a standard null hist_end_date needs no cutoff advice when the file ends with actuals",
-      has(flat, "Auto uses `2022-12-01`, the latest date in the file.") && !has(flat, "To end history at the last actuals instead"))
+      has(flat, "| History used | **through Dec 2022** (automatic) | `hist_end_date` = `null` |") &&
+        !has(flat, "To end history at the last actuals instead"))
     check("settings review: suggestions show size and JSON value; run type is not a suggestion",
       has(review, "very large") && has(review, "- `models_to_run`: `[\"xgboost\"]`.") && !has(review, "Run type advice") &&
         has(review, "Fast and predictable."))
     one <- vc$validate_settings_review(modifyList(config, list(combo_variables = "Region")), facts, list())
-    check("settings review: single combo column stays an array", has(one, "| `combo_variables` | `[\"Region\"]` |"))
-    check("settings review: ensembles off are kept separate from averaging",
-      has(review, "| `run_ensemble_models` | `false` |") && has(review, "Kept `false` for standard runs"))
+    check("settings review: single combo column stays an array", has(one, "`combo_variables` = `[\"Region\"]`"))
+    check("settings review: standard runs always review ensembles, kept separate from averaging",
+      has(section(review, "Settings to review"), "| Ensemble models (`run_ensemble_models`) | `false` |") &&
+        has(review, "Kept `false` for standard runs"))
     check("settings review: explicitly requested ensembles on",
-      has(vc$validate_settings_review(modifyList(config, list(run_ensemble_models = TRUE)), facts, list()), "| `run_ensemble_models` | `true` | Controls whether ensemble models are trained; separate from simple averaging. Ensembles are on"))
+      has(vc$validate_settings_review(modifyList(config, list(run_ensemble_models = TRUE)), facts, list()),
+        "| Ensemble models (`run_ensemble_models`) | `true` | Whether Finn also trains ensemble models that combine other models' forecasts; separate from simple averaging. Ensembles are on"))
     auto <- config
     auto$run_ensemble_models <- NULL
     check("settings review: automatic ensembles are flagged",
-      has(vc$validate_settings_review(auto, facts, list()), "| `run_ensemble_models` | `null` |") &&
+      has(vc$validate_settings_review(auto, facts, list()), "| Ensemble models (`run_ensemble_models`) | `null` (automatic) |") &&
         has(vc$validate_settings_review(auto, facts, list()), "Auto may enable ensembles"))
     agent <- modifyList(config, list(mode = "agent", agent = list(max_iter = 3, weighted_mape_goal = 0.03)))
     agent_review <- vc$validate_settings_review(agent, facts, list())
     check("settings review: Agent rows replace standard-only rows",
       !has(agent_review, "`run_ensemble_models`") && !has(agent_review, "`forecast_approach`") &&
-        has(agent_review, "| `max_iter` | `3` |") && has(agent_review, "| `weighted_mape_goal` | `0.03` |") &&
-        has(agent_review, "| `llm` |") && has(agent_review, "**Agent iterate** forecast settings") &&
+        has(agent_review, "| Max iterations (`max_iter`) | `3` |") &&
+        has(agent_review, "| Accuracy goal (`weighted_mape_goal`) | `0.03` (3% average error) |") &&
+        has(agent_review, "| AI model (`llm`) |") && has(agent_review, "**Agent iterate** forecast settings") &&
         has(agent_review, "over up to 3 iterations"))
+    check("settings review: Agent iterate always reviews the search budget, goal, and AI model",
+      has(section(agent_review, "Settings to review"), "#### How hard the Agent searches") &&
+        has(section(agent_review, "Settings to review"), "(`max_iter`)") &&
+        has(section(agent_review, "Settings to review"), "(`weighted_mape_goal`)") &&
+        has(section(agent_review, "Settings to review"), "(`llm`)"))
     check("settings review: hidden internals are not shown",
       !has(review, "`seed`") && !has(review, "`parallel`"))
-    check("settings review: an Agent null hist_end_date keeps naming its last period with actuals",
-      has(agent_review, "Auto uses `2022-12-01`.") && has(agent_review, "or `null` for the last period with actuals.") &&
+    check("settings review: an Agent null hist_end_date ends history at its last period with actuals",
+      has(agent_review, "| History used | **through Dec 2022** (automatic) | `hist_end_date` = `null` |") &&
         !has(agent_review, "the latest date in the file"))
 
     update_run <- list(run_type = "update", label = "Agent update", hint = finn_run_type_hint("update"),
@@ -1096,6 +1124,145 @@ with(common, {
       has(lower_review, "a lower value can't undo iterations, so nothing new would run. Set it above `3`") &&
         has(lower_review, "Your last Agent search used `0.05`. A stricter (lower) goal continues that Agent version"))
 
+    all_keys <- unique(c(vc$validate_review_fields("standard"), vc$validate_review_fields("agent")))
+    categorized <- unlist(vc$validate_setting_categories(), use.names = FALSE)
+    check("setting categories: every review setting belongs to exactly one category",
+      !anyDuplicated(categorized) && setequal(categorized, all_keys))
+    check("setting categories: every review setting has a label and an explanation",
+      setequal(names(vc$validate_setting_labels()), all_keys) && all(nzchar(vc$validate_setting_labels())) &&
+        all(vapply(all_keys, function(k) nzchar(vc$validate_field_explanation(k, config)), logical(1))))
+    for (m in c("standard", "agent")) {
+      groups <- vc$validate_setting_groups(m)
+      check(paste("setting groups: one category per", m, "setting, overview first"),
+        setequal(unlist(groups, use.names = FALSE), vc$validate_review_fields(m)) &&
+          identical(names(groups)[1], "Forecast overview") && all(lengths(groups) > 0))
+    }
+    # Whether every setting of a mode renders exactly once as a setting row or cell.
+    once <- function(text, cfg_mode) all(vapply(vc$validate_review_fields(cfg_mode), function(k) {
+      hits <- gregexpr(sprintf("`%s` = `|\\(`%s`\\) \\|", k, k), text)[[1]]
+      sum(hits > 0) == 1
+    }, logical(1)))
+    check("settings review: each standard setting renders exactly once", once(review, "standard"))
+    check("settings review: each Agent setting renders exactly once", once(agent_review, "agent"))
+
+    glance_cfg <- modifyList(config, list(hist_end_date = "2022-12-01", fiscal_year_start = 7))
+    glance_facts <- modifyList(facts, list(history_start = "2021-01-01", history_periods = 24))
+    glance <- vc$validate_settings_review(glance_cfg, glance_facts, list())
+    check("at a glance: plain rows tied to exact config values",
+      has(glance, "| What we're forecasting | **Sales** | `target_variable` = `\"Sales\"` |") &&
+        has(glance, "| Broken out by | **Region, Product** (4 series) | `combo_variables` = `[\"Region\",\"Product\"]` |") &&
+        has(glance, "| Date grain | **Monthly** | `date_type` = `\"month\"` |") &&
+        has(glance, "| History used | **Jan 2021 to Dec 2022** (24 months) | `hist_end_date` = `\"2022-12-01\"` |") &&
+        has(glance, "| Forecast period | **Jan 2023 to Dec 2023** (12 months, ends in FY24) | `forecast_horizon` = `12` |") &&
+        has(glance, "| Drivers | **Promo\\|Flag** (from your file) | `external_regressors` = `[\"Promo\\|Flag\"]` |") &&
+        has(glance, "| Forecast type | **Standard** | `mode` = `\"standard\"` |"))
+    check("at a glance: an explicit hist_end_date needs no cutoff advice", !has(glance, "`hist_end_date` is `null`"))
+    check("at a glance: a forecast ending with the fiscal year says so",
+      has(vc$validate_settings_review(modifyList(glance_cfg, list(forecast_horizon = 18)), glance_facts, list()),
+        "**Jan 2023 to Jun 2024** (18 months, through the end of FY24)"))
+    check("at a glance: a January fiscal year adds no fiscal label",
+      has(vc$validate_settings_review(modifyList(glance_cfg, list(fiscal_year_start = 1)), glance_facts, list()),
+        "**Jan 2023 to Dec 2023** (12 months) |"))
+    check("at a glance: quarterly forecast through the fiscal year end",
+      has(vc$validate_settings_review(modifyList(glance_cfg, list(date_type = "quarter", hist_end_date = "2023-04-01", forecast_horizon = 4)),
+        list(), list()), "**Q1 FY24 to Q4 FY24** (4 quarters, through the end of FY24)"))
+    no_drivers <- glance_cfg
+    no_drivers$external_regressors <- NULL
+    no_drivers <- vc$validate_settings_review(no_drivers, glance_facts, list())
+    check("at a glance: no drivers", has(no_drivers, "| Drivers | **None** | `external_regressors` = `null` |"))
+    check("period labels by grain and fiscal year",
+      identical(vc$validate_period_label(as.Date("2023-07-01"), "quarter", 7), "Q1 FY24") &&
+        identical(vc$validate_period_label(as.Date("2023-04-01"), "quarter", 1), "Q2 2023") &&
+        identical(vc$validate_period_label(as.Date("2023-04-01"), "quarter", 2), "Apr 2023") &&
+        identical(vc$validate_period_label(as.Date("2023-01-02"), "week", 7), "Jan 2, 2023") &&
+        identical(vc$validate_period_label(as.Date("2023-01-01"), "year", 7), "2023") &&
+        identical(vc$validate_period_label(as.Date("2023-03-01"), "month", 7), "Mar 2023"))
+    check("period counts are singular or plural",
+      identical(vc$validate_count_label(1, "month"), "1 month") && identical(vc$validate_count_label(8, "quarter"), "8 quarters"))
+
+    bt <- vc$validate_settings_review(modifyList(glance_cfg, list(back_test_scenarios = 4)), glance_facts, list())
+    to_review <- section(bt, "Settings to review")
+    check("settings to review: non-default settings grouped by category in display order",
+      has(to_review, "#### Accuracy testing\n\n| Setting | Value | What it means |\n|---|---|---|\n| Back-test rounds (`back_test_scenarios`) | `4` |") &&
+        regexpr("#### Model selection", to_review, fixed = TRUE) > 0 &&
+        regexpr("#### Model selection", to_review, fixed = TRUE) < regexpr("#### Accuracy testing", to_review, fixed = TRUE) &&
+        !has(to_review, "`run_local_models`") &&
+        has(section(bt, "Everything else uses Finn's defaults"), "| Model selection | Per-series models (`run_local_models`) | `true` |"))
+
+    last <- list(mode = "standard", created_at = "2026-10-03T10:00:00-0700", end = "2022-06-01",
+      config = finn_merge_config(modifyList(glance_cfg, list(hist_end_date = "2022-06-01", forecast_horizon = 6))))
+    since <- vc$validate_settings_review(glance_cfg,
+      modifyList(glance_facts, list(new_actuals = list(count = 6, first = "2022-07-01", last = "2022-12-01"))),
+      list(), run = list(run_type = "standard", situation = "standard_refresh"), last_run = last)
+    check("last run: existing projects compare each row with the last same-type run",
+      has(since, "| | This run | Last run | Setting |\n|---|---|---|---|") &&
+        has(since, "| What we're forecasting | **Sales** | same | `target_variable` = `\"Sales\"` |") &&
+        has(since, "| History used | **Jan 2021 to Dec 2022** (24 months) | through Jun 2022 | ") &&
+        has(since, "| Forecast period | **Jan 2023 to Dec 2023** (12 months, ends in FY24) | Jul 2022 to Dec 2022 (6 months) | ") &&
+        has(since, "| Forecast type | **Standard** | Standard | "))
+    check("last run: new actuals since the last run are counted",
+      has(since, "**New since your last run (Oct 3, 2026):** 6 more months of actuals (Jul 2022 to Dec 2022)."))
+    check("last run: no comparison without a same-type run", has(glance, "| | Plan | Setting |") && !has(glance, "| Last run |"))
+    agent_last <- list(mode = "iterate", agent_version = 1, created_at = "2026-10-03T10:00:00-0700", end = "2022-06-01",
+      config = finn_merge_config(agent))
+    upd <- vc$validate_settings_review(agent, facts, list(), run = update_run, last_run = agent_last)
+    check("last run: an Agent update compares this update with the last Agent forecast",
+      has(upd, "| | This update | Last run | Setting |") &&
+        has(upd, "| Forecast type | **Agent update** with your new actuals | Agent iterate (version 1, up to 3 iterations) | `mode` = `\"agent\"` |") &&
+        !has(upd, "### Ways to get more from this run"))
+    cont_run <- list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3, launch = "--mode=iterate")
+    cont_review <- vc$validate_settings_review(modifyList(agent, list(agent = list(max_iter = 5))), facts, list(),
+      run = cont_run, last_run = agent_last)
+    check("same version: only the search budget and goal can change",
+      has(section(cont_review, "Settings to review"), paste(
+        "This run continues your current Agent version, so only **Max iterations** (set it above 3, your last search's total,",
+        "to search longer) and **Accuracy goal** can change.")) &&
+        has(cont_review, "| Forecast type | **Agent iterate**, continues your current Agent version up to 5 iterations |"))
+    check("same version: tips skip changes that need a new Agent version",
+      !has(cont_review, "as a driver`") && !has(cont_review, "Need a longer outlook?") && has(cont_review, "Say `use 7 iterations`."))
+    fresh <- vc$validate_settings_review(agent, facts, list(),
+      run = list(run_type = "iterate", situation = "agent_refresh", launch = "--mode=iterate --new=true --confirm=true"), last_run = agent_last)
+    check("new version: heads up explains that the search starts over",
+      has(fresh, "This run starts a **new Agent version**.") &&
+        has(fresh, "| Forecast type | **Agent iterate**, new Agent version (the search starts over) |") &&
+        !has(fresh, "This run continues your current Agent version"))
+    ri_cont <- vc$validate_run_info(list(run_type = "iterate", situation = "agent_current", launch = "--mode=iterate", prior_max_iter = 3,
+      continuation = list(kind = "other_changes")), "iterate", agent)
+    check("run info: a current Agent version names how iterate continues", identical(ri_cont$continuation_kind, "other_changes"))
+    other_review <- vc$validate_settings_review(agent, facts, list(), run = ri_cont, last_run = agent_last)
+    check("same version: other changed settings need a new Agent version",
+      has(other_review, "| Forecast type | **Agent iterate**, needs a new Agent version because other settings changed |") &&
+        has(section(other_review, "Settings to review"), "Other settings changed, so this run needs a new Agent version") &&
+        !has(other_review, "This run continues your current Agent version"))
+    check("tips: example replies for drivers and a longer outlook",
+      has(section(glance, "Ways to get more from this run"),
+        "You're using Promo|Flag as a driver. If another column in your file moves with `Sales`, say `also use <column> as a driver`.") &&
+        has(glance, "Need a longer outlook? Say `forecast through Jun 2024`."))
+    two_drivers <- vc$validate_settings_review(modifyList(glance_cfg, list(external_regressors = c("Price", "Promo"), forecast_horizon = 18)),
+      glance_facts, list())
+    check("tips: several drivers read as a list; a forecast ending with its fiscal year suggests the next one",
+      has(two_drivers, "You're using Price and Promo as drivers.") && has(two_drivers, "Say `forecast through Jun 2025`."))
+    check("tips: suggest adding a driver when none is used",
+      has(no_drivers, "Add a driver: if another column in your file moves with `Sales`, say `use <column> as a driver`."))
+    check("tips: Agent iterate suggests a longer search", has(agent_review, "Want the Agent to search longer? Say `use 5 iterations`."))
+
+    hist_data <- data.frame(Date = seq(as.Date("2021-01-01"), by = "month", length.out = 27), Region = "A",
+      Sales = c(seq_len(24), NA, NA, NA))
+    hf <- vc$validate_history_facts(hist_data, modifyList(config, list(hist_end_date = "2022-12-01")), "2022-12-01", "2022-06-01")
+    check("history facts: span, period count, and new actuals",
+      identical(hf$history_start, "2021-01-01") && identical(hf$history_periods, 24L) &&
+        identical(hf$new_actuals, list(count = 6L, first = "2022-07-01", last = "2022-12-01")))
+    trimmed <- vc$validate_history_facts(hist_data, modifyList(config, list(hist_start_date = "2022-01-01")), "2022-12-01")
+    check("history facts: hist_start_date trims the span",
+      identical(trimmed$history_start, "2022-01-01") && identical(trimmed$history_periods, 12L) && is.null(trimmed$new_actuals))
+    check("history facts: unreadable data never blocks the review", identical(vc$validate_history_facts(NULL, config, "2022-12-01"), list()))
+    lr <- list(standard = list(run_id = "std-1", mode = "standard", end = "2023-12-01", config = list(mode = "standard", forecast_horizon = 6)),
+      agent = NULL)
+    check("last run: picks the same run type's last finished run",
+      identical(vc$validate_last_run(list(last_runs = lr), "standard")$run_id, "std-1") &&
+        identical(vc$validate_last_run(list(last_runs = lr), "standard")$config$forecast_horizon, 6) &&
+        is.null(vc$validate_last_run(list(last_runs = lr), "iterate")) && is.null(vc$validate_last_run(list(), "update")))
+
     nr_new <- list(run_type = "standard", situation = "new_project", launch = "--mode=standard")
     ri <- vc$validate_run_info(nr_new, "standard", config, small)
     check("run info: new small standard project offers Agent iterate from size advice",
@@ -1116,10 +1283,15 @@ with(common, {
 
     changed <- modifyList(config, list(forecast_horizon = 6, models_to_run = c("arima", "ets")))
     changes <- vc$validate_settings_changes(config, changed, facts, "Low RAM.")
-    check("settings changes: only changed inputs with previous and new values",
-      has(changes, "| Input | Previous | New value | What it means for your forecast |") &&
-        has(changes, "| `forecast_horizon` | `12` | `6` |") && has(changes, "| `models_to_run` | `null` | `[\"arima\",\"ets\"]` |") &&
-        !has(changes, "`target_variable`") && has(changes, "### Warnings") && has(changes, "`show full configuration`"))
+    check("settings changes: only changed inputs with plain labels, previous and new values",
+      has(changes, "| Setting | Previous | New value | What it means |") &&
+        has(changes, "| Forecast period (`forecast_horizon`) | `12` | `6` |") &&
+        has(changes, "| Models to try (`models_to_run`) | `null` | `[\"arima\",\"ets\"]` |") &&
+        !has(changes, "`target_variable`") && has(changes, "**Heads up:** Low RAM.") && has(changes, "`show full configuration`"))
+    reordered <- vc$validate_settings_changes(config, modifyList(config, list(negative_forecast = TRUE, models_to_run = "arima")), facts)
+    check("settings changes: rows follow the review's category order",
+      regexpr("(`models_to_run`)", reordered, fixed = TRUE) > 0 &&
+        regexpr("(`models_to_run`)", reordered, fixed = TRUE) < regexpr("(`negative_forecast`)", reordered, fixed = TRUE))
     check("settings changes: no change says so",
       has(vc$validate_settings_changes(config, config, facts), "No settings changed."))
     check("settings changes: mode switch falls back to the full review", is.null(vc$validate_settings_changes(config, agent, facts)))
@@ -1445,6 +1617,12 @@ with(launch, {
     check("next run: settings changes since the last Agent forecast are listed",
       identical(finn_next_run(ap, modifyList(acfg, list(forecast_horizon = 12)), list(last_actual_date = "2024-06-01"))$settings_changes,
         "forecast_horizon 6 -> 12"))
+    check("next run: last finished runs of each type are summarized for the review",
+      identical(sr$last_runs$standard$run_id, "std-1") && identical(sr$last_runs$standard$end, "2023-12-01") &&
+        is.null(sr$last_runs$agent) && identical(ar$last_runs$agent$run_id, "iter-1") &&
+        identical(ar$last_runs$agent$end, "2023-12-01") && identical(as.numeric(ar$last_runs$agent$config$agent$max_iter), 3) &&
+        identical(as.numeric(ar$last_runs$agent$agent_version), 1) && is.null(ar$last_runs$standard) &&
+        is.null(finn_next_run(np, cfg, list())$last_runs$standard))
 
     rpj <- project_with("NextResume", list(agent_state("iter-1"), list(run_id = "upd-2", mode = "update", status = "failed",
       created_at = "2024-02-01T00:00:00+0000")), agent_last("iter-1"))
@@ -1844,7 +2022,7 @@ with(launch, {
     check("preview wires batch share without false pressure warning", card$ok && card$data$parallel$num_cores == 7 &&
       !any(grepl("Available RAM is below", card$data$warnings)))
     check("preview returns one settings review without the old card", length(card$data$settings_review) == 1 &&
-      grepl("### Forecast configuration", card$data$settings_review, fixed = TRUE) && is.null(card$data$settings_card))
+      grepl("### Your forecast at a glance", card$data$settings_review, fixed = TRUE) && is.null(card$data$settings_card))
     check("preview names the next run type for an existing standard project",
       identical(card$data$run$run_type, "standard") && grepl("^standard_", card$data$run$situation) &&
         grepl("next **Standard** forecast for existing project `First`", card$data$settings_review, fixed = TRUE))
@@ -3657,8 +3835,9 @@ local({
   # Settings review
   sec <- vcm$validate_custom_models_section(list(finn_custom_summary(fake_model("growth"), "Region")), "standard")
   check("custom models: review section lists each model",
-    grepl("### Custom models", sec, fixed = TRUE) &&
-      grepl("| `growth` | `aaaaaaaaaaaa` | local | none | Adds last year's growth. |", sec, fixed = TRUE) &&
+    grepl("### Your custom models", sec, fixed = TRUE) &&
+      grepl("| Model | Version | Type | Uses from your file | What it does |", sec, fixed = TRUE) &&
+      grepl("| `growth` | `aaaaaaaaaaaa` | local (one model per series) | none | Adds last year's growth. |", sec, fixed = TRUE) &&
       grepl("compete with Finn's models", sec, fixed = TRUE))
   check("custom models: Agent review explains later runs",
     grepl("later iterate and update runs", vcm$validate_custom_models_section(list(finn_custom_summary(fake_model("growth"))), "iterate"), fixed = TRUE))
@@ -3671,7 +3850,7 @@ local({
   next_cfg$custom_models <- enroll("growth")
   changes <- vcm$validate_settings_changes(prev_cfg, next_cfg)
   check("custom models: revision view lists enrollment changes",
-    grepl("| `custom_models` | none | `growth@aaaaaaaaaaaa` |", changes, fixed = TRUE))
+    grepl("| Your custom models (`custom_models`) | none | `growth@aaaaaaaaaaaa` |", changes, fixed = TRUE))
 
   # custom_model.R helpers
   check("custom_model: split", identical(cm$custom_model_split(" a, b ,a,"), c("a", "b")) && identical(cm$custom_model_split(NULL), character()))

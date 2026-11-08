@@ -1,7 +1,18 @@
 {
-  "version": "0.3.2",
-  "released": "2026-10-27",
+  "version": "0.3.3",
+  "released": "2026-11-07",
   "changelog": [
+    {
+      "version": "0.3.3",
+      "date": "2026-11-07",
+      "changes": [
+        "Settings reviews open with a plain-language at-a-glance table showing each exact setting, the series count, history span, and forecast period with its fiscal year.",
+        "Existing projects compare core settings with the last run of the same type and count the new actuals since then.",
+        "Settings that differ from Finn's defaults or always need a look are grouped by category; the rest move to a defaults table at the end.",
+        "Example replies suggest drivers, a longer outlook, or more Agent iterations; a continued Agent version explains which settings can change.",
+        "Revisions list changed settings with plain labels in review order, and warnings appear as a heads-up."
+      ]
+    },
     {
       "version": "0.3.2",
       "date": "2026-10-27",

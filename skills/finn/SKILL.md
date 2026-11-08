@@ -149,10 +149,13 @@ Do not change the finnts package version for a skill-only change.
    project's history (`data.run`); explain its `why` and other option. The user decides;
    pass their choice with `--run_type=<standard|iterate|update>`.
 5. `validate_config.R --project=<name> --run_type=<choice>`. Show `data.settings_review`
-   exactly as written; do not reorder, reformat, or paraphrase it. It includes an intro
-   naming the run type with a plain-language hint, why it fits, and
-   the other option; a data check; a forecast configuration table with each input's value
-   and meaning; warnings; suggestions; and run time on this computer. If the user now
+   exactly as written; do not reorder, reformat, or paraphrase it. It opens with the run
+   type, a plain-language hint, why it fits, and the other option. Then come: a "Your
+   forecast at a glance" table (plain rows with each exact `setting` = `value`, plus a
+   "Last run" column when the project has a finished run of the same type); new actuals
+   since that run; a one-line data check; a heads-up block for warnings; "Settings to
+   review" grouped by category; suggestions; example replies; run time on this computer;
+   and the remaining settings that use Finn's defaults. If the user now
    prefers the other option, rerun with its `--run_type` and show the new review. Ask
    about anything marked as a guess, including how dates and decimals were read and, for
    monthly or longer data, which month the fiscal year starts. Apply suggestions from
@@ -162,8 +165,12 @@ Do not change the finnts package version for a skill-only change.
    an input, write the full proposed config to a draft file outside the project, run
    `validate_config.R --project=<name> --config=<draft> --run_type=<choice>`, and show
    `data.settings_changes` (only the changed inputs; show `data.settings_review` if they
-   ask for the full configuration). Save with `--save=true --run_type=<choice>` only
-   after the user replies `run` or otherwise agrees.
+   ask for the full configuration). Map the review's example replies to exact settings:
+   `use <column> as a driver` adds that file column to `external_regressors`;
+   `forecast through <month> <year>` sets `forecast_horizon` to the number of periods
+   after `hist_end_date` through that month; `use <N> iterations` sets `agent.max_iter`.
+   Ask instead of guessing when a reply does not map to one setting. Save with
+   `--save=true --run_type=<choice>` only after the user replies `run` or otherwise agrees.
 6. Launch with `run_forecast.R --project=<name>` plus the arguments in `data.run.launch`,
    so the run matches the reviewed run type; if launch returns `needs_review`, the saved
    settings were reviewed for another run type, so redo step 5. Before the first
