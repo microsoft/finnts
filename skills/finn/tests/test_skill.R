@@ -1203,6 +1203,34 @@ with(common, {
     check("last run: new actuals since the last run are counted",
       has(since, "**New since your last run (Oct 3, 2026):** 6 more months of actuals (Jul 2022 to Dec 2022)."))
     check("last run: no comparison without a same-type run", has(glance, "| | Plan | Setting |") && !has(glance, "| Last run |"))
+    flat_facts <- modifyList(facts, list(date_max = "2022-06-01", last_actual_date = "2022-06-01"))
+    last_auto <- list(mode = "standard", created_at = "2026-10-03T10:00:00-0700", end = "2022-06-01", config = finn_merge_config(config))
+    auto_since <- vc$validate_settings_review(config, flat_facts, list(),
+      run = list(run_type = "standard", situation = "standard_current"), last_run = last_auto)
+    check("last run: an unsaved history cutoff is not guessed from the last actuals",
+      has(auto_since, "| History used | **through Jun 2022** (automatic) | actuals through Jun 2022 | ") &&
+        has(auto_since, "| Forecast period | **Jul 2022 to Jun 2023** (12 months) | 12 months | "))
+    start_last <- list(mode = "standard", created_at = "2026-10-03T10:00:00-0700", end = "2022-12-01",
+      config = finn_merge_config(modifyList(glance_cfg, list(hist_start_date = "2021-06-01"))))
+    start_review <- vc$validate_settings_review(glance_cfg, glance_facts, list(),
+      run = list(run_type = "standard", situation = "standard_current"), last_run = start_last)
+    check("last run: a changed hist_start_date is not marked same",
+      has(start_review, "| History used | **Jan 2021 to Dec 2022** (24 months) | from Jun 2021 through Dec 2022 | ") &&
+        has(start_review, "| Forecast period | **Jan 2023 to Dec 2023** (12 months, ends in FY24) | same | "))
+    q_cfg <- modifyList(glance_cfg, list(date_type = "quarter", hist_end_date = "2022-10-01", forecast_horizon = 4))
+    m_last <- list(mode = "standard", created_at = "2026-10-03T10:00:00-0700", end = "2022-10-01",
+      config = finn_merge_config(modifyList(q_cfg, list(date_type = "month"))))
+    grain_review <- vc$validate_settings_review(q_cfg, list(), list(),
+      run = list(run_type = "standard", situation = "standard_current"), last_run = m_last)
+    check("last run: the last forecast window keeps its own date grain",
+      has(grain_review, "| Forecast period | **Q3 FY23 to Q2 FY24** (4 quarters, ends in FY24) | Nov 2022 to Feb 2023 (4 months) | ") &&
+        has(grain_review, "| Date grain | **Quarterly** | Monthly | ") &&
+        has(grain_review, "| History used | **through Q2 FY23** | through Oct 2022 | "))
+    enrolled <- modifyList(glance_cfg, list(custom_models = list(list(name = "growth", version_id = "abcdef0123456789abcdef"))))
+    check("at a glance: custom models show their exact config value",
+      has(vc$validate_settings_review(enrolled, glance_facts, list()), paste0(
+        "| Your custom models | **growth@abcdef012345**: they compete with Finn's models | ",
+        "`custom_models` = `[{\"name\":\"growth\",\"version_id\":\"abcdef0123456789abcdef\"}]` |")))
     agent_last <- list(mode = "iterate", agent_version = 1, created_at = "2026-10-03T10:00:00-0700", end = "2022-06-01",
       config = finn_merge_config(agent))
     upd <- vc$validate_settings_review(agent, facts, list(), run = update_run, last_run = agent_last)
@@ -1225,6 +1253,11 @@ with(common, {
         has(cont_review, "| Forecast type | **Agent iterate**, continues your current Agent version up to 5 iterations |"))
     check("same version: tips skip changes that need a new Agent version",
       !has(cont_review, "as a driver`") && !has(cont_review, "Need a longer outlook?") && has(cont_review, "Say `use 7 iterations`."))
+    low_run <- list(run_type = "iterate", situation = "agent_current", prior_max_iter = 10, launch = "--mode=iterate",
+      continuation_kind = "lower_max_iter")
+    low_review <- vc$validate_settings_review(modifyList(agent, list(agent = list(max_iter = 2))), facts, list(), run = low_run)
+    check("tips: a continued Agent version suggests more than its last total",
+      has(low_review, "Say `use 12 iterations`.") && !has(low_review, "Say `use 4 iterations`."))
     fresh <- vc$validate_settings_review(agent, facts, list(),
       run = list(run_type = "iterate", situation = "agent_refresh", launch = "--mode=iterate --new=true --confirm=true"), last_run = agent_last)
     check("new version: heads up explains that the search starts over",

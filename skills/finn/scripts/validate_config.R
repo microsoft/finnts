@@ -721,7 +721,11 @@ validate_last_type_text <- function(last) {
 #' drivers, enrolled custom models, and forecast type, each with its exact
 #' config value. With a last run, a "Last run" column reads "same" for rows
 #' that did not change; the forecast type row always names the last run's type.
-#' Derived facts are display-only.
+#' Last run cells use that run's own date grain and fiscal year. Its history
+#' cutoff and forecast window are shown only when it saved `hist_end_date`;
+#' otherwise finnts ended history at that file's latest date, which is not
+#' saved, so the cells show its last actuals and horizon length and never
+#' read "same". Derived facts are display-only.
 #'
 #' @param cfg Merged config.
 #' @param facts Review facts: data facts plus [validate_history_facts()].
@@ -769,10 +773,24 @@ validate_overview_section <- function(cfg, facts, run, run_type, last = NULL) {
   } else {
     "**automatic**"
   }
+  # The last run's own grain and fiscal year label its cells. Its cutoff is known only when it saved a
+  # hist_end_date; otherwise finnts ended history at that file's latest date, which is not saved, so
+  # `last$end` (its last actuals) must not stand in for it.
+  prev_type <- prev$date_type %||% date_type
+  prev_fys <- if (!is.null(prev)) validate_fys(prev) else fys
   last_end <- validate_as_date(last$end)
-  same_end <- !is.null(last) && identical(end, as.character(unlist(last$end %||% ""))[1])
+  cutoff <- validate_as_date(prev$hist_end_date)
+  prev_start <- validate_as_date(prev$hist_start_date)
+  same_end <- !is.null(cutoff) && identical(end, as.character(cutoff)) && same("date_type")
   add(labels[["hist_end_date"]], history, setting("hist_end_date"),
-    if (!is.null(last_end)) sprintf("through %s", validate_period_label(last_end, date_type, fys)) else "", same_end)
+    if (!is.null(cutoff) || !is.null(last_end)) {
+      paste0(if (!is.null(prev_start)) sprintf("from %s ", validate_period_label(prev_start, prev_type, prev_fys)) else "",
+        if (!is.null(cutoff)) "through " else "actuals through ",
+        validate_period_label(cutoff %||% last_end, prev_type, prev_fys))
+    } else {
+      ""
+    },
+    same_end && same("hist_start_date"))
 
   horizon <- validate_count_label(cfg$forecast_horizon %||% "?", date_type)
   window <- validate_forecast_window(end, date_type, cfg$forecast_horizon)
@@ -782,11 +800,13 @@ validate_overview_section <- function(cfg, facts, run, run_type, last = NULL) {
   } else {
     sprintf("**%s** after history ends", horizon)
   }
-  last_window <- if (!is.null(prev)) validate_forecast_window(last$end, date_type, prev$forecast_horizon)
+  last_window <- if (!is.null(cutoff)) validate_forecast_window(cutoff, prev_type, prev$forecast_horizon)
   add(labels[["forecast_horizon"]], forecast, setting("forecast_horizon"),
     if (!is.null(last_window)) {
-      sprintf("%s (%s)", validate_span_label(last_window$start, last_window$end, date_type, fys),
-        validate_count_label(prev$forecast_horizon, date_type))
+      sprintf("%s (%s)", validate_span_label(last_window$start, last_window$end, prev_type, prev_fys),
+        validate_count_label(prev$forecast_horizon, prev_type))
+    } else if (!is.null(prev)) {
+      validate_count_label(prev$forecast_horizon %||% "?", prev_type)
     } else {
       ""
     },
@@ -803,8 +823,7 @@ validate_overview_section <- function(cfg, facts, run, run_type, last = NULL) {
   if (length(custom) || length(prev_custom)) {
     role <- if (identical(run_type, "standard")) "they compete with Finn's models" else "the Agent tries them alongside its own models"
     add("Your custom models", if (length(custom)) sprintf("%s: %s", paste(sprintf("**%s**", custom), collapse = ", "), role) else "**None**",
-      sprintf("`custom_models` = `%s`", if (length(custom)) paste(custom, collapse = ", ") else "null"),
-      finn_custom_label_text(prev_custom), !is.null(prev) && identical(custom, prev_custom))
+      setting("custom_models"), finn_custom_label_text(prev_custom), same("custom_models"))
   }
   rows[[length(rows) + 1]] <- list(label = "Forecast type", plan = validate_forecast_type_text(cfg, run, run_type),
     setting = sprintf("`mode` = `%s`", validate_json_value("mode", cfg$mode)),
@@ -957,8 +976,9 @@ validate_settings_sections <- function(cfg, facts, run, run_type) {
 #' Suggests adding drivers and forecasting through the end of the fiscal year
 #' that holds the period after the forecast (not for Agent updates or a
 #' continued Agent version, where those changes need a new version), a longer
-#' Agent search for iterate runs (except when the latest Agent forecast was an
-#' update, so more iterations cannot continue that version), and asking where
+#' Agent search for iterate runs (above the last search's total when the
+#' version continues; not when the latest Agent forecast was an update, so
+#' more iterations cannot continue that version), and asking where
 #' custom models helped for Agent runs. SKILL.md maps each reply to its config
 #' setting.
 #'
@@ -987,10 +1007,13 @@ validate_review_tips <- function(cfg, facts, run, run_type) {
     }
   }
   if (identical(run_type, "iterate") && !identical(run$continuation_kind, "last_update")) {
-    more <- suppressWarnings(as.numeric(unlist(cfg$agent$max_iter %||% 3))[1]) + 2
-    if (!is.na(more)) {
+    # On a continued version, more iterations only help above the last search's total.
+    budgets <- suppressWarnings(as.numeric(c(unlist(cfg$agent$max_iter %||% 3)[1],
+      if (validate_continuing(run, run_type)) unlist(run$prior_max_iter)[1])))
+    budgets <- budgets[!is.na(budgets)]
+    if (length(budgets)) {
       tips <- c(tips, sprintf("Want the Agent to search longer? Say `use %s iterations`. Each extra iteration adds run time and AI model requests.",
-        format(more)))
+        format(max(budgets) + 2)))
     }
   }
   if (!identical(run_type, "standard") && length(finn_custom_labels(cfg))) {

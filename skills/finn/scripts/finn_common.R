@@ -2556,7 +2556,9 @@ finn_stopped_iterate_revision <- function(latest, cfg) {
 #'   version; absent otherwise),
 #'   `last_runs` (list with `standard` and `agent`: the last finished
 #'   standard run and the last finished Agent forecast, each with `run_id`,
-#'   `mode`, `created_at`, `end` (its history end), `config`, and
+#'   `mode`, `created_at`, `end` (its saved `hist_end_date`, or else its last
+#'   period with actuals; not its history cutoff when `hist_end_date` was
+#'   unset), `config`, and
 #'   `agent_version` for Agent runs, or NULL; display-only, taken from the
 #'   run states already listed), and
 #'   `recommendations` (each `key`, `value`, `reason`).
