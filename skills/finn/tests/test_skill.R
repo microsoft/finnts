@@ -1210,6 +1210,10 @@ with(common, {
       has(upd, "| | This update | Last run | Setting |") &&
         has(upd, "| Forecast type | **Agent update** with your new actuals | Agent iterate (version 1, up to 3 iterations) | `mode` = `\"agent\"` |") &&
         !has(upd, "### Ways to get more from this run"))
+    check("last run: names the last run's type and Agent version",
+      identical(vc$validate_last_type_text(list(mode = "update", agent_version = 2)), "Agent update (version 2)") &&
+        identical(vc$validate_last_type_text(list(mode = "iterate", config = finn_merge_config(agent))), "Agent iterate (up to 3 iterations)") &&
+        identical(vc$validate_last_type_text(list(mode = "standard")), "Standard"))
     cont_run <- list(run_type = "iterate", situation = "agent_current", prior_max_iter = 3, launch = "--mode=iterate",
       continuation_kind = "continue")
     cont_review <- vc$validate_settings_review(modifyList(agent, list(agent = list(max_iter = 5))), facts, list(),
