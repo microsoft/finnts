@@ -41,7 +41,8 @@ If reusing a tutorial project, review its saved settings first; do not silently
 overwrite them. Keep other settings unchanged unless the user agrees.
 
 Run `validate_config.R --project=finn_tutorial`, show `data.settings_review` exactly
-as written, then walk through these rows of its forecast configuration table:
+as written, then walk through these settings in its at-a-glance table, "Settings to
+review", and defaults sections:
 
 - **Forecast horizon:** how many months ahead (suggest 12 here).
 - **Back testing:** Finn hides recent months, forecasts them, and compares with actuals to
