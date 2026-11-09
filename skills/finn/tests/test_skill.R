@@ -1320,6 +1320,20 @@ with(common, {
     check("history facts: periods in the window include rows that only carry driver values",
       identical(driver_rows$history_start, "2021-01-01") && identical(driver_rows$history_periods, 27L) &&
         identical(driver_rows$new_actuals, list(count = 6L, first = "2022-07-01", last = "2022-12-01")))
+    gappy <- data.frame(Date = as.Date(c("2021-01-01", "2021-02-01", "2021-03-01", "2021-05-01", "2021-06-01")), Region = "A",
+      Sales = c(NA, 2, 3, 5, 6))
+    gap_facts <- vc$validate_history_facts(gappy, config, "2021-06-01")
+    check("history facts: history starts at the earliest file date even when its target is missing",
+      identical(gap_facts$history_start, "2021-01-01"))
+    check("history facts: periods missing from the file are counted, as preparation pads them",
+      identical(gap_facts$history_periods, 6L))
+    early <- vc$validate_history_facts(gappy, modifyList(config, list(hist_start_date = "2020-10-01")), "2021-06-01")
+    check("history facts: an earlier hist_start_date starts the padded history",
+      identical(early$history_start, "2020-10-01") && identical(early$history_periods, 9L))
+    pinned_facts <- vc$validate_history_facts(hist_data, modifyList(config, list(hist_end_date = "2022-06-01")), "2022-06-01", "2022-06-01")
+    check("history facts: new actuals are counted even when the cutoff stays at the last run's end",
+      identical(pinned_facts$new_actuals, list(count = 6L, first = "2022-07-01", last = "2022-12-01")) &&
+        identical(pinned_facts$history_periods, 18L))
     lr <- list(standard = list(run_id = "std-1", mode = "standard", end = "2023-12-01", config = list(mode = "standard", forecast_horizon = 6)),
       agent = NULL)
     check("last run: picks the same run type's last finished run",
@@ -1687,6 +1701,9 @@ with(launch, {
         identical(ar$last_runs$agent$end, "2023-12-01") && identical(as.numeric(ar$last_runs$agent$config$agent$max_iter), 3) &&
         identical(as.numeric(ar$last_runs$agent$agent_version), 1) && is.null(ar$last_runs$standard) &&
         is.null(finn_next_run(np, cfg, list())$last_runs$standard))
+    fp <- project_with("NextAgentFailed", list(modifyList(agent_state("iter-1"), list(status = "failed"))), agent_last("iter-1"))
+    check("next run: a failed Agent run is never the last finished Agent forecast",
+      is.null(finn_next_run(fp, acfg, list(last_actual_date = "2024-06-01"))$last_runs$agent))
 
     rpj <- project_with("NextResume", list(agent_state("iter-1"), list(run_id = "upd-2", mode = "update", status = "failed",
       created_at = "2024-02-01T00:00:00+0000")), agent_last("iter-1"))

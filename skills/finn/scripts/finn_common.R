@@ -2560,7 +2560,7 @@ finn_stopped_iterate_revision <- function(latest, cfg) {
 #'   period with actuals; not its history cutoff when `hist_end_date` was
 #'   unset), `config`, and
 #'   `agent_version` for Agent runs, or NULL; display-only, taken from the
-#'   run states already listed), and
+#'   run states already listed, and only from runs whose state is completed), and
 #'   `recommendations` (each `key`, `value`, `reason`).
 finn_next_run <- function(paths, cfg, facts = list()) {
   runs <- Filter(function(s) !identical(s$effective_status, "unreadable"), finn_list_runs(paths))
@@ -2685,7 +2685,10 @@ finn_next_run <- function(paths, cfg, facts = list()) {
       config = state[["config", exact = TRUE]], agent_version = if (!identical(state$mode, "standard")) last_agent$agent_version)
   }
   last_standard <- Find(function(s) identical(s$mode, "standard"), completed)
-  last_agent_state <- if (agent_done && !is.null(last_agent$run_id)) Find(function(s) identical(s$run_id, last_agent$run_id), runs)
+  # The project records its last Agent forecast before the run state is saved as completed, so require both.
+  last_agent_state <- if (agent_done && !is.null(last_agent$run_id)) {
+    Find(function(s) identical(s$run_id, last_agent$run_id) && identical(s$effective_status, "completed"), runs)
+  }
   out$last_runs <- list(standard = run_summary(last_standard, last_standard$data_end),
     agent = run_summary(last_agent_state, last_agent$hist_end_date))
   out$launch <- if (identical(out$situation, "resume")) paste0("--mode=", out$run_type) else if (isTRUE(out$new_version)) {

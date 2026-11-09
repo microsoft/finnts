@@ -573,12 +573,14 @@ validate_resolved_hist_end <- function(cfg, facts) {
 
 #' Display-only history facts for the review
 #'
-#' Counts the distinct periods in the history window, from the first period
-#' used (`hist_start_date`, or the first actual) through `hist_end`. The
-#' window includes rows that only carry driver values, because runs train on
-#' every period up to the cutoff. Also counts the new actuals after the last
-#' run's history end. Never blocks the review: an unreadable input returns an
-#' empty list.
+#' Describes the history that data preparation uses: it starts at
+#' `hist_start_date`, or else the earliest date in the file even when its
+#' target is missing, and runs through `hist_end`. The count is every period of
+#' the date grain in that window, because preparation pads periods missing
+#' from the file. New actuals are the periods with target values after the
+#' last run's history end, whatever this run's cutoff, so a cutoff still at
+#' the last run's end does not hide them. Never blocks the review: an
+#' unreadable input returns an empty list.
 #'
 #' @param data Checked data frame with a `Date` column, or NULL.
 #' @param cfg Merged config.
@@ -590,19 +592,20 @@ validate_resolved_hist_end <- function(cfg, facts) {
 validate_history_facts <- function(data, cfg, hist_end, prior_end = NULL) {
   tryCatch({
     dates <- as.Date(data$Date)
+    known <- dates[!is.na(dates)]
     actual <- sort(unique(dates[!is.na(dates) & !is.na(data[[cfg$target_variable]])]))
-    periods <- sort(unique(dates[!is.na(dates)]))
     end <- validate_as_date(hist_end)
     out <- list()
-    if (length(actual) && !is.null(end)) {
-      start <- max(actual[[1]], validate_as_date(cfg$hist_start_date) %||% actual[[1]])
-      used <- periods[periods >= start & periods <= end]
-      if (length(used)) out <- list(history_start = as.character(used[[1]]), history_periods = length(used))
-      prior <- validate_as_date(prior_end)
-      new <- if (!is.null(prior)) actual[actual > prior & actual <= end] else actual[0]
-      if (length(new)) {
-        out$new_actuals <- list(count = length(new), first = as.character(new[[1]]), last = as.character(new[[length(new)]]))
+    if (length(known) && !is.null(end) && validate_known_grain(cfg$date_type)) {
+      start <- validate_as_date(cfg$hist_start_date) %||% min(known)
+      if (start <= end) {
+        out <- list(history_start = as.character(start), history_periods = length(seq(start, end, by = cfg$date_type)))
       }
+    }
+    prior <- validate_as_date(prior_end)
+    new <- if (!is.null(prior)) actual[actual > prior] else actual[0]
+    if (length(new)) {
+      out$new_actuals <- list(count = length(new), first = as.character(new[[1]]), last = as.character(new[[length(new)]]))
     }
     out
   }, error = function(e) list())
