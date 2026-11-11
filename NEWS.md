@@ -63,6 +63,7 @@
 - Agent run logs are always read as CSV with text `run_id` and `request_id`.
   - Projects saving parquet outputs now find their Agent history, and numeric-looking request IDs resume the right run.
   - Recording a request ID changes only that run's own log, adding no other columns.
+- finnts imports `%||%` from rlang, so code paths using it no longer fail on R versions before 4.4, which lack the base R operator.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
