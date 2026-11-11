@@ -2,6 +2,8 @@
 
 #' Initialize custom svm-rbf parsnip model
 #'
+#' Declares finnts as an engine dependency so tune loads it, and with it this
+#' engine registration, on every parallel worker before fitting.
 #'
 #' @return NA
 #' @noRd
@@ -13,6 +15,7 @@ make_svm_rbf_multistep <- function() {
   parsnip::set_model_engine("svm_rbf_multistep", mode = "regression", eng = "svm_rbf_multistep_horizon")
   parsnip::set_dependency("svm_rbf_multistep", "svm_rbf_multistep_horizon", "kernlab")
   parsnip::set_dependency("svm_rbf_multistep", "svm_rbf_multistep_horizon", "parsnip")
+  parsnip::set_dependency("svm_rbf_multistep", "svm_rbf_multistep_horizon", "finnts")
 
   # * Args - SVM-RBF ----
   parsnip::set_model_arg(

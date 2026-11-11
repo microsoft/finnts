@@ -1,4 +1,4 @@
-# finnts 0.7.0.9020 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9021 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -24,6 +24,8 @@
   - Also checks that `date_type` matches the date spacing.
   - For hierarchies, also checks every series and external regressor can be prepared, with `prep_data()` errors.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
+- `inner_parallel = TRUE` again tunes and refits models in parallel with tune 2.x, reusing the existing worker pool.
+  - The caller's `future` plan is restored when each step finishes or is cancelled.
 
 ## Bug Fixes
 
@@ -91,6 +93,14 @@
   -   Earlier versions remain replay context; external-regressor exploration has no separate cap beyond the overall iteration limit.
   -   Canonical lag, rolling-window, and seasonal-period settings prevent reordered, default, or previously tested configurations consuming additional changes.
   -   Finalization and verification avoid repeated listings; best-run listing failures propagate as storage errors.
+-   Multistep models no longer silently lose back-test refits on inner-parallel workers that had not loaded finnts.
+
+## Breaking Changes
+
+-   Requires R 4.1 and tune 2.0.1 or later; minimum dials, parsnip, recipes, rsample and workflows versions also rise.
+  -   Adds `future` and `future.apply` imports; both were already installed through existing dependencies.
+  -   Forecasts may shift once when upgrading from tune 1.x, because tune 2.x seeds resampling differently.
+  -   Upgrade Spark cluster libraries to these versions before installing this finnts version.
 
 # finnts 0.7.0
 

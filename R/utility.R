@@ -52,6 +52,9 @@ utils::globalVariables(c(
 
 #' @importFrom glmnet glmnet
 
+# tune's future backend calls future.apply::future_lapply() on inner pools.
+#' @importFrom future.apply future_lapply
+
 #' @importFrom rules cubist_fit committees max_rules
 
 #' @importFrom stats median

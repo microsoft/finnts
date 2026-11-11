@@ -11,7 +11,90 @@ get_cores <- function(num_cores) {
   }
 }
 
+# Per-process record of the future plan finnts registered for its active local
+# PSOCK pool: `cluster` is that pool and `previous` is the caller's plan to
+# restore. One slot suffices because a process runs at most one finnts pool at a
+# time; par_start() already replaces any earlier foreach backend.
+par_future_state <- new.env(parent = emptyenv())
+
+#' Share a local PSOCK pool with tune through a future plan
+#'
+#' tune 2.x no longer uses foreach backends; it parallelizes only through a
+#' registered future plan (or mirai daemons). Registering the pool foreach
+#' already uses lets `tune_grid()` and `fit_resamples()` run on the same
+#' workers, so inner parallelism needs no second pool or extra memory.
+#' A registration left by an earlier error is restored first, so the saved
+#' caller plan is never a stale finnts pool.
+#'
+#' @param cl PSOCK cluster created by `par_start()`.
+#'
+#' @return `cl`, invisibly. Side effect: changes the session's future plan and
+#'   records the caller's plan in `par_future_state`.
+#' @noRd
+par_future_register <- function(cl) {
+  par_future_restore()
+  previous <- future::plan(future::cluster, workers = cl)
+  par_future_state$cluster <- cl
+  par_future_state$previous <- previous
+  invisible(cl)
+}
+
+#' Restore the caller's future plan after a finnts pool
+#'
+#' @param cl Optional PSOCK cluster. When supplied, only that pool's
+#'   registration is restored, so ending one pool never undoes another's.
+#'   `NULL` restores any registration, for error cleanup.
+#'
+#' @return `TRUE` invisibly when a plan was restored, otherwise `FALSE`.
+#'   Side effect: resets the session's future plan and clears
+#'   `par_future_state`.
+#' @noRd
+par_future_restore <- function(cl = NULL) {
+  if (!exists("previous", envir = par_future_state, inherits = FALSE)) {
+    return(invisible(FALSE))
+  }
+  if (!is.null(cl) && !identical(par_future_state$cluster, cl)) {
+    return(invisible(FALSE))
+  }
+  previous <- par_future_state$previous
+  rm(list = c("cluster", "previous"), envir = par_future_state)
+  future::plan(previous)
+  invisible(TRUE)
+}
+
+#' Attach worker packages on every PSOCK worker at once
+#'
+#' future's cluster backend attaches a future's packages on its worker with a
+#' blocking call while launching it, so tune's first futures on a fresh pool
+#' start one worker after another (about 8 s each for finnts' dependencies).
+#' Attaching them here runs on all workers concurrently. foreach `.packages`
+#' and tune `pkgs` then find them attached. Failures are ignored, so a missing
+#' package still raises the existing foreach or tune error when it is needed.
+#'
+#' @param cl PSOCK cluster.
+#' @param packages Character vector of package names to attach.
+#'
+#' @return `NULL`, invisibly. Side effect: attaches packages on each worker.
+#' @noRd
+par_attach_worker_packages <- function(cl, packages) {
+  attach_packages <- function(packages) {
+    for (package in packages) {
+      try(suppressPackageStartupMessages(library(package, character.only = TRUE)), silent = TRUE)
+    }
+    NULL
+  }
+  # keep the worker function free of this frame so only package names are sent
+  environment(attach_packages) <- baseenv()
+  parallel::clusterCall(cl, attach_packages, unique(packages))
+  invisible(NULL)
+}
+
 #' Function to submit tasks sequentially, in parallel on local machine, or in spark
+#'
+#' A `"local_machine"` pool attaches its worker packages up front, then is
+#' registered both as the foreach backend and as the session's future plan, so
+#' tune 2.x tunes and refits on the same, already loaded workers. `par_end()`
+#' or `cancel_parallel()` restores the caller's plan.
 #'
 #' @param run_info run info
 #' @param parallel_processing type of parallel processing to run
@@ -92,11 +175,13 @@ par_start <- function(run_info,
       parallel::clusterEvalQ(cl, .libPaths(libs))
     }
 
+    packages <- c(base_packages, add_packages, parallel_packages)
+    par_attach_worker_packages(cl, c(packages, "finnts"))
+
     doParallel::registerDoParallel(cl)
+    par_future_register(cl)
 
     `%op%` <- foreach::`%dopar%`
-
-    packages <- c(base_packages, add_packages, parallel_packages)
   } else {
     stop("error")
   }
@@ -106,11 +191,15 @@ par_start <- function(run_info,
 
 #' Function to clean up after submitting tasks sequentially, in parallel on local machine, or in spark
 #'
+#' Restores the caller's future plan if `cl` was registered by `par_start()`,
+#' then stops the cluster and resets foreach to sequential.
+#'
 #' @param cl cluster object
 #'
 #' @noRd
 par_end <- function(cl) {
   if (!is.null(cl)) {
+    try(par_future_restore(cl), silent = TRUE)
     try(parallel::stopCluster(cl), silent = TRUE)
   }
   foreach::registerDoSEQ()
@@ -118,6 +207,9 @@ par_end <- function(cl) {
 
 
 #' Function to clean up after a foreach error when submitting tasks sequentially, in parallel on local machine, or in spark
+#'
+#' Also restores any future plan a finnts pool registered, including one left
+#' behind by an inner pool that the error skipped.
 #'
 #' @param par_info parallel info
 #'
@@ -128,6 +220,8 @@ cancel_parallel <- function(par_info) {
   } else {
     parallel_processing <- par_info$parallel_processing
   }
+
+  try(par_future_restore(), silent = TRUE)
 
   # Spark: cancel active jobs immediately (best-effort)
   if (parallel_processing == "spark") {

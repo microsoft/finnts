@@ -733,7 +733,7 @@ train_models <- function(run_info,
           custom_run_fit_resamples(finalized_workflow, prep_data,
             create_splits(prep_data, model_train_test_tbl),
             tune::control_resamples(allow_par = inner_parallel, save_pred = TRUE,
-              pkgs = inner_packages, parallel_over = "everything")) %>%
+              pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
             base::suppressMessages() %>% base::suppressWarnings()
         } else tune::fit_resamples(
           object = finalized_workflow,
@@ -742,7 +742,7 @@ train_models <- function(run_info,
           control = tune::control_resamples(
             allow_par = inner_parallel,
             save_pred = TRUE,
-            pkgs = inner_packages,
+            pkgs = c(inner_packages, "finnts"),
             parallel_over = "everything"
           )
         ) %>%

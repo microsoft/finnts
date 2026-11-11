@@ -2,6 +2,8 @@
 
 #' Initialize custom xgboost parsnip model
 #'
+#' Declares finnts as an engine dependency so tune loads it, and with it this
+#' engine registration, on every parallel worker before fitting.
 #'
 #' @return NA
 #' @noRd
@@ -15,6 +17,7 @@ make_xgboost_multistep <- function() {
   parsnip::set_model_engine("xgboost_multistep", mode = "regression", eng = "xgboost_multistep_horizon")
   parsnip::set_dependency("xgboost_multistep", "xgboost_multistep_horizon", "xgboost")
   parsnip::set_dependency("xgboost_multistep", "xgboost_multistep_horizon", "modeltime")
+  parsnip::set_dependency("xgboost_multistep", "xgboost_multistep_horizon", "finnts")
 
   # * Args - Xgboost ----
   parsnip::set_model_arg(

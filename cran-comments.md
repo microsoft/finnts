@@ -14,7 +14,7 @@ There were 3 NOTEs:
   optional use and the checks performed without it are described below.
 
 * checking package dependencies ... NOTE
-  Imports includes 39 non-default packages.
+  Imports includes 41 non-default packages.
   Importing from so many packages makes the package vulnerable to any of
   them becoming unavailable.  Move as many as possible to Suggests and
   use conditionally.
@@ -45,8 +45,8 @@ non-importance sections. A dedicated CI job verifies this no-`vip` path with
 `_R_CHECK_FORCE_SUGGESTS_=false` while also excluding the other optional
 feature-selection packages (`Boruta`, `corrr`, and `ranger`).
 
-`vip` requires R 4.1 or newer, while FinnTS continues to support its core
-workflows on R 4.0 without this optional package.
+`vip` requires R 4.1 or newer, matching FinnTS's own R 4.1 minimum, which
+follows from tune 2.x.
 
 `ranger` is also declared directly in `Suggests` because FinnTS invokes its
 parsnip engine during optional feature selection and uses Boruta's ranger

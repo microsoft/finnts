@@ -2,6 +2,8 @@
 
 #' Initialize custom glmnet parsnip model
 #'
+#' Declares finnts as an engine dependency so tune loads it, and with it this
+#' engine registration, on every parallel worker before fitting.
 #'
 #' @return NA
 #' @noRd
@@ -13,6 +15,7 @@ make_glmnet_multistep <- function() {
   parsnip::set_model_engine("glmnet_multistep", mode = "regression", eng = "glmnet_multistep_horizon")
   parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "glmnet")
   parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "parsnip")
+  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "finnts")
 
   # * Args - GLMNET ----
   parsnip::set_model_arg(

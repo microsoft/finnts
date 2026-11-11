@@ -176,6 +176,25 @@ test_that("multistep specs are correctly identified by class", {
   }
 })
 
+test_that("multistep engines make tune load finnts on parallel workers", {
+  multistep_specs <- list(
+    cubist_multistep_horizon   = cubist_multistep(),
+    mars_multistep_horizon     = mars_multistep(),
+    glmnet_multistep_horizon   = glmnet_multistep(),
+    svm_poly_multistep_horizon = svm_poly_multistep(),
+    svm_rbf_multistep_horizon  = svm_rbf_multistep(),
+    xgboost_multistep_horizon  = xgboost_multistep()
+  )
+
+  for (engine in names(multistep_specs)) {
+    spec <- parsnip::set_engine(multistep_specs[[engine]], engine)
+    expect_true(
+      "finnts" %in% parsnip::required_pkgs(spec),
+      label = paste(engine, "requires finnts")
+    )
+  }
+})
+
 test_that("update(selected_features) works on multistep specs", {
   spec <- cubist_multistep(forecast_horizon = 3)
 
