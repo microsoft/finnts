@@ -1638,6 +1638,36 @@ make_stationary <- function(df) {
   return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
 
+#' Add right-aligned rolling-window features to prepared data
+#'
+#' Replaces `timetk::tk_augment_slidify()`, which builds its column-by-period
+#' grid with the deprecated `purrr::cross_df()`. It reproduces that function's
+#' ungrouped output exactly: each window is a partial, right-aligned
+#' `timetk::slidify_vec()` summary. Results are ordered by period, then column
+#' (all columns for the first period, then the next), take `window_names` in
+#' that order, and overwrite existing columns with the same names.
+#'
+#' @param data Ungrouped data frame.
+#' @param columns Candidate column names. Absent columns are skipped; the rest
+#'   keep this order.
+#' @param periods Window lengths in rows.
+#' @param .f Summary function or formula applied to each window.
+#' @param window_names New column names, one per kept column and period, in
+#'   period-major order. A length mismatch errors, as in timetk.
+#'
+#' @return `data` with the rolling-window columns added or replaced.
+#' @noRd
+augment_rolling_windows <- function(data, columns, periods, .f, window_names) {
+  columns <- intersect(columns, colnames(data))
+  grid <- tidyr::expand_grid(period = periods, column = columns)
+  windows <- purrr::map2(grid$column, grid$period, function(column, period) {
+    timetk::slidify_vec(data[[column]], .f = .f, .period = period, .align = "right", .partial = TRUE)
+  })
+  windows <- dplyr::bind_cols(purrr::set_names(windows, window_names))
+  data[, colnames(windows)] <- windows
+  data
+}
+
 #' Function to perform feature engineering according to R1 recipe
 #'
 #' @param data data frame
@@ -1705,39 +1735,33 @@ multivariate_prep_recipe_1 <- function(data,
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
     dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", lag_periods))) %>% # drop original target cols if found
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
-    timetk::tk_augment_slidify( # create rolling windows
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ mean(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows( # create rolling windows
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ mean(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_Avg")
         }
       ) %>%
         unlist()
     ) %>%
-    timetk::tk_augment_slidify(
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ sum(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows(
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ sum(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_Sum")
         }
       ) %>%
         unlist()
     ) %>%
-    timetk::tk_augment_slidify(
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ sd(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows(
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ sd(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_StdDev")
         }
@@ -1862,39 +1886,33 @@ multivariate_prep_recipe_2 <- function(data,
       ) %>%
       dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", unique(c(lag_periods_r2, lag_periods))))) %>% # drop original target cols if found
       tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ mean(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ mean(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_Avg")
           }
         ) %>%
           unlist()
       ) %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ sum(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ sum(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_Sum")
           }
         ) %>%
           unlist()
       ) %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ sd(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ sd(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_StdDev")
           }

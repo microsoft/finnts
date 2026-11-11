@@ -94,6 +94,12 @@
   -   Canonical lag, rolling-window, and seasonal-period settings prevent reordered, default, or previously tested configurations consuming additional changes.
   -   Finalization and verification avoid repeated listings; best-run listing failures propagate as storage errors.
 -   Multistep models no longer silently lose back-test refits on inner-parallel workers that had not loaded finnts.
+-   Fixed a bug in leave-one-feature-out (LOFO) feature selection; it now works for monthly, quarterly and yearly local models.
+  -   Selected features, forecasts and runtimes change for these feature-selection runs; existing saved runs are unchanged.
+  -   LOFO is the slowest selection step; `inner_parallel = TRUE` runs it in parallel.
+-   Replaced deprecated `dials::grid_latin_hypercube()` and timetk rolling-window calls that relied on deprecated `purrr::cross_df()`.
+  -   Prepared features and ensemble grids are unchanged, except with `num_hyperparameters = 1`, where ensembles pick their setting like individual models.
+    -   Results remain reproducible for a given seed.
 
 ## Breaking Changes
 

@@ -348,7 +348,7 @@ ensemble_models <- function(run_info,
 
         set.seed(seed)
 
-        grid <- dials::grid_latin_hypercube(parameters, size = num_hyperparameters)
+        grid <- ensemble_latin_hypercube_grid(parameters, num_hyperparameters)
 
         hyperparameters_temp <- grid %>%
           dplyr::group_split(dplyr::row_number(), .keep = FALSE) %>%
@@ -592,4 +592,21 @@ ensemble_target_scale <- function(target_tbl, predictions, series_data) {
   history <- series_data$history
   target_tbl$Target <- history$Target[match(as.Date(target_tbl$Date), as.Date(history$Date))]
   target_tbl
+}
+
+#' Build an ensemble model's latin hypercube hyperparameter grid
+#'
+#' Replaces the deprecated `dials::grid_latin_hypercube()`. For two or more
+#' points, dials uses the same latin hypercube design, so a given seed gives
+#' an identical grid. A single point is a `grid_random()` draw, matching how
+#' individual models build one-point grids. Uses the session RNG, so call
+#' `set.seed()` first for reproducible grids.
+#'
+#' @param parameters Finalized dials parameter set for one ensemble model.
+#' @param size Number of hyperparameter combinations.
+#'
+#' @return Tibble with one column per parameter and `size` rows.
+#' @noRd
+ensemble_latin_hypercube_grid <- function(parameters, size) {
+  dials::grid_space_filling(parameters, size = size, type = "latin_hypercube")
 }
