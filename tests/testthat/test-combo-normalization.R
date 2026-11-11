@@ -105,6 +105,27 @@ test_that("duplicate errors explain that blank, missing and NA text values share
   )
 })
 
+test_that("mixed label check treats missing database counts as zero", {
+  # SQL backends such as Spark sum all-NULL comparisons, or no rows, to NULL.
+  testthat::local_mocked_bindings(
+    collect = function(x, ...) {
+      tibble::tibble(
+        Region__missing = 2L, Region__na_text = NA_integer_,
+        Site__missing = NA_integer_, Site__na_text = NA_integer_
+      )
+    },
+    .package = "dplyr"
+  )
+  input_data <- tibble::tibble(
+    Region = c(NA_character_, NA_character_),
+    Site = c("A", "B"),
+    Date = as.Date("2024-01-01"),
+    Target = c(1, 2)
+  )
+
+  expect_silent(check_input_mixed_missing_labels(input_data, c("Region", "Site")))
+})
+
 test_that("combo validation rejects collisions created by normalization", {
   input_data <- tibble::tibble(
     ID = c("A", " A "),

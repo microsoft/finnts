@@ -57,6 +57,12 @@
   - In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates: within the failure limit (20% of series, at least 10) they get default forecasts; above it the update stops with the same explanation.
   - Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally. Grouped hierarchies are unchanged.
   - Keep the same parent groups, or start a new history with `iterate_forecast()`.
+- Agent forecast updates without a completed earlier Agent version now explain what is missing.
+  - The error lists the run logs searched, how many versions were found, what each incomplete version lacks, and the next step: restore the Agent history or start a new one with `iterate_forecast()`.
+  - Request-ID update setups stop before writing a new version; retrying the same request still resumes an interrupted update.
+- Agent run logs are always read as CSV with text `run_id` and `request_id`.
+  - Projects saving parquet outputs now find their Agent history, and numeric-looking request IDs resume the right run.
+  - Recording a request ID changes only that run's own log, adding no other columns.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.

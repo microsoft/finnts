@@ -390,7 +390,8 @@ check_input_date_column <- function(input_data) {
 #' column, as before, so this only warns; standard and grouped hierarchies stop
 #' later in `check_mixed_missing_labels()`. Numeric columns cannot hold the
 #' text, and their `NA`/`NaN` names stay distinct, so they are skipped. Counts
-#' are computed in one summary query, so Spark tables are not collected.
+#' are computed in one summary query, so Spark tables are not collected; a
+#' missing count (SQL sums of all-NULL values or no rows) counts as zero.
 #'
 #' @param input_data local or Spark input data with combo values already
 #'   normalized by `normalize_combo_values()`
@@ -424,8 +425,8 @@ check_input_mixed_missing_labels <- function(input_data,
     dplyr::collect()
 
   for (variable in character_variables) {
-    if (label_counts[[paste0(variable, "__missing")]] > 0 &&
-      label_counts[[paste0(variable, "__na_text")]] > 0) {
+    if (isTRUE(label_counts[[paste0(variable, "__missing")]] > 0) &&
+      isTRUE(label_counts[[paste0(variable, "__na_text")]] > 0)) {
       warning(
         "Combo column '", variable, "' contains both missing values and the text \"NA\", ",
         "which finnts names identically, so bottoms-up forecasts combine series that differ ",
