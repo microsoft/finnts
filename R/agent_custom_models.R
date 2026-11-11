@@ -673,7 +673,8 @@ agent_custom_update_context <- function(agent_info, combos, seed) {
 # Pin the latest completed compatible predecessor and its exact saved choices.
 # Reentry uses the saved predecessor, not discovery. Enrollment and controls
 # must be compatible; exact predecessor and current identities remain pinned.
-# Current series may change within the established new-series limit.
+# Current series may change within the established new-series limit. A missing
+# completed predecessor errors with the shared run-log diagnostics and next step.
 # One record and parent marker are written before child execution. This is
 # immutable reentry checking, not a transaction.
 prepare_agent_custom_update <- function(agent_info, seed) {
@@ -698,7 +699,12 @@ prepare_agent_custom_update <- function(agent_info, seed) {
     runs <- runs[order(runs$agent_version, decreasing = TRUE), , drop = FALSE]
     runs <- runs[runs$agent_version < agent_info$agent_version, , drop = FALSE]
     completed <- find_completed_previous_agent_runs(agent_info, runs, max_runs = 1L)
-    if (!length(completed)) stop("Custom update requires a completed predecessor.", call. = FALSE)
+    if (!length(completed)) {
+      stop(format_agent_history_error(
+        "Custom update requires a completed predecessor. No completed previous agent run found.",
+        agent_info$project_info, agent_predecessor_history(agent_info, runs)
+      ), call. = FALSE)
+    }
     previous <- completed[[1]]$agent_info
     previous <- load_agent_custom_state(attach_agent_custom_contract(previous, read_agent_custom_record(previous, TRUE)))
     previous$custom_agent_update_audit <- TRUE

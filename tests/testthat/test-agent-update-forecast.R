@@ -963,6 +963,76 @@ test_that("initial_checks reports when no finalized predecessor exists", {
   )
 })
 
+test_that("initial_checks explains which predecessor outputs are missing", {
+  result <- tryCatch(run_initial_checks_case(list()), error = identity)
+  message <- if (inherits(result, "error")) conditionMessage(result) else ""
+  expect_match(message, "Project 'project'", fixed = TRUE)
+  expect_match(message, "run-logging/logs", fixed = TRUE)
+  expect_match(message, "-*agent_run.csv", fixed = TRUE)
+  expect_match(message, "Found 4 previous Agent versions; 0 completed", fixed = TRUE)
+  expect_match(message, "v4 lacks run_metadata", fixed = TRUE)
+  expect_match(message, paste0("restore the Agent history under 'run-logging' ",
+    "or start a new history with iterate_forecast()"), fixed = TRUE)
+})
+
+test_that("update checks without earlier run logs explain where Finn searched", {
+  agent_info <- make_update_agent_info()
+  testthat::local_mocked_bindings(
+    check_agent_info = function(...) invisible(NULL),
+    load_update_runs = function(...) tibble::tibble(),
+    list_files = function(...) "run-5-agent_run.csv",
+    .package = "finnts"
+  )
+  for (check in list(initial_checks, analyze_results)) {
+    result <- tryCatch(check(agent_info), error = identity)
+    message <- if (inherits(result, "error")) conditionMessage(result) else ""
+    expect_match(message, "No previous agent runs found", fixed = TRUE)
+    expect_match(message, "run-logging/logs", fixed = TRUE)
+    expect_match(message, "Found 0 previous Agent versions; 0 completed", fixed = TRUE)
+    expect_match(message, "start a new history with iterate_forecast()", fixed = TRUE)
+  }
+})
+
+test_that("missing predecessor forecast approaches count as incomplete", {
+  fixture <- make_csv_update_fixture(withr::local_tempdir(), "4282d17137126405")
+  for (approach in list(NA_character_, NULL)) {
+    previous <- fixture$previous
+    previous["forecast_approach"] <- list(approach)
+    expect_null(load_completed_agent_run_outputs(previous))
+  }
+  runs <- fixture$agent_runs[2, ]
+  runs$forecast_approach <- NA_character_
+  expect_length(find_completed_previous_agent_runs(fixture$agent_info, runs), 0L)
+  runs$forecast_approach <- NULL
+  expect_length(find_completed_previous_agent_runs(fixture$agent_info, runs), 0L)
+})
+
+test_that("predecessor search tries every run log sharing a version, newest first", {
+  path <- withr::local_tempdir()
+  agent_info <- make_update_agent_info()
+  agent_info$project_info$path <- path
+  fs::dir_create(fs::path(path, "final_output"))
+  for (run_id in c("run-a", "run-b")) {
+    outputs <- make_complete_final_outputs(run_id)
+    for (suffix in names(outputs)) {
+      utils::write.csv(outputs[[suffix]], fs::path(path, "final_output", paste0(
+        hash_data(agent_info$project_info$project_name), "-", hash_data(run_id),
+        "-", suffix, ".csv"
+      )), row.names = FALSE)
+    }
+  }
+  runs <- make_update_agent_run_table()[1:3, ]
+  runs$agent_version <- 1
+  runs$run_id <- c("run-c", "run-b", "run-a")
+  runs$created <- as.POSIXct(c("2026-03-01", "2026-02-01", "2026-01-01"), tz = "UTC")
+  selected <- function(table) {
+    vapply(find_completed_previous_agent_runs(agent_info, table),
+      function(run) run$agent_info$run_id, character(1))
+  }
+  expect_identical(selected(runs), "run-b")
+  expect_identical(selected(runs[3:1, ]), "run-b")
+})
+
 test_that("initial_checks propagates final metadata provider failures", {
   expect_error(
     run_initial_checks_case(

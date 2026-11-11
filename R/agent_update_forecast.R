@@ -586,11 +586,15 @@ validate_completed_run_metadata <- function(metadata, run_id) {
   TRUE
 }
 
+# Load a saved version's required final outputs when it finished. A version
+# without a recorded forecast approach cannot prove which outputs it needed and
+# counts as incomplete. Returns the named outputs, or NULL when any is missing,
+# empty or has invalid run metadata. Storage and read failures propagate.
 load_completed_agent_run_outputs <- function(agent_info) {
-  required_suffixes <- c("run_metadata", "forecast", "model_summary", "eda")
-  if (agent_info$forecast_approach != "bottoms_up") {
-    required_suffixes <- c(required_suffixes, "hierarchy_summary")
+  if (!agent_forecast_approach_recorded(agent_info$forecast_approach)) {
+    return(NULL)
   }
+  required_suffixes <- agent_run_required_suffixes(agent_info$forecast_approach)
 
   outputs <- purrr::map(
     required_suffixes,
@@ -618,18 +622,20 @@ load_completed_agent_run_outputs <- function(agent_info) {
   outputs
 }
 
+# Search saved version rows for completed predecessors, newest first (see
+# agent_run_search_order()), so legacy run logs sharing a version number are
+# all considered. Returns up to max_runs lists holding predecessor info, run
+# metadata and hierarchy summary. Incomplete rows are skipped; storage and
+# read failures propagate. No artifacts are written.
 find_completed_previous_agent_runs <- function(agent_info,
                                                previous_agent_runs,
                                                max_runs = 1L) {
   completed_runs <- list()
-  versions <- unique(previous_agent_runs$agent_version)
 
-  for (version in versions) {
-    version_run_tbl <- previous_agent_runs %>%
-      dplyr::filter(agent_version == version)
+  for (index in agent_run_search_order(previous_agent_runs)) {
     previous_agent_info <- build_previous_agent_info(
       agent_info = agent_info,
-      agent_run_tbl = version_run_tbl
+      agent_run_tbl = previous_agent_runs[index, , drop = FALSE]
     )
     final_outputs <- load_completed_agent_run_outputs(
       agent_info = previous_agent_info
@@ -651,6 +657,154 @@ find_completed_previous_agent_runs <- function(agent_info,
   }
 
   return(completed_runs)
+}
+
+# Final outputs that prove an Agent version finished. Hierarchical versions
+# also need their hierarchy summary. Returns suffixes in reporting order.
+agent_run_required_suffixes <- function(forecast_approach) {
+  required <- c("run_metadata", "forecast", "model_summary", "eda")
+  if (!identical(as.character(forecast_approach), "bottoms_up")) {
+    required <- c(required, "hierarchy_summary")
+  }
+  required
+}
+
+# TRUE when a saved forecast approach is a single nonblank value. NULL (absent
+# column), NA and blank values mean the version's required outputs are unknown.
+agent_forecast_approach_recorded <- function(forecast_approach) {
+  length(forecast_approach) == 1L && !is.na(forecast_approach) &&
+    nzchar(as.character(forecast_approach))
+}
+
+# Row order for predecessor searches: highest agent_version first, then latest
+# created time (when logged), each run ID once. Ties without created times keep
+# input order. Older parquet projects may hold several run logs that all say
+# version 1. Returns row indices of the given run-log table.
+agent_run_search_order <- function(agent_runs_tbl) {
+  if (!NROW(agent_runs_tbl)) {
+    return(integer())
+  }
+  versions <- as.numeric(agent_runs_tbl$agent_version)
+  index <- if ("created" %in% names(agent_runs_tbl)) {
+    order(versions, agent_runs_tbl$created, decreasing = TRUE)
+  } else {
+    order(versions, decreasing = TRUE)
+  }
+  index[!duplicated(as.character(agent_runs_tbl$run_id[index]))]
+}
+
+# Completion check for diagnostics and the update gate. Required outputs other
+# than run metadata are only probed by exact path, so a predecessor's forecast
+# is never read here; run metadata is read only when every output exists.
+# Returns complete (logical) and problems (phrases such as "lacks forecast").
+# Empty run metadata counts as lacking. Provider/read failures propagate.
+agent_predecessor_status <- function(previous_agent_info) {
+  approach <- previous_agent_info$forecast_approach
+  if (!agent_forecast_approach_recorded(approach)) {
+    return(list(complete = FALSE, problems = "has no recorded forecast approach"))
+  }
+
+  project_info <- previous_agent_info$project_info
+  required <- agent_run_required_suffixes(approach)
+  # Same path as load_final_agent_artifact().
+  present <- vapply(required, function(suffix) {
+    final_agent_artifact_exists(project_info, paste0(
+      "/final_output/", hash_data(project_info$project_name), "-",
+      hash_data(previous_agent_info$run_id), "-", suffix, ".", project_info$data_output
+    ))
+  }, logical(1))
+  if (!all(present)) {
+    return(list(complete = FALSE,
+      problems = paste("lacks", paste(required[!present], collapse = ", "))))
+  }
+
+  metadata <- load_final_agent_artifact(previous_agent_info, "run_metadata")
+  if (!nrow(metadata)) {
+    return(list(complete = FALSE, problems = "lacks run_metadata"))
+  }
+  if (!validate_completed_run_metadata(metadata, previous_agent_info$run_id)) {
+    return(list(complete = FALSE, problems = "has invalid run_metadata"))
+  }
+  list(complete = TRUE, problems = character())
+}
+
+# Classify saved versions newest first. With stop_at_complete, checking ends at
+# the first completed version, as the update gate needs. Returns the number of
+# distinct run logs, checked statuses (version, complete, problems) and the
+# first completed predecessor's info, or NULL. Read-only.
+agent_predecessor_history <- function(agent_info, agent_runs_tbl,
+                                      stop_at_complete = FALSE) {
+  rows <- agent_run_search_order(agent_runs_tbl)
+  statuses <- list()
+  completed <- NULL
+  for (index in rows) {
+    previous_agent_info <- build_previous_agent_info(
+      agent_info = agent_info,
+      agent_run_tbl = agent_runs_tbl[index, , drop = FALSE]
+    )
+    status <- agent_predecessor_status(previous_agent_info)
+    statuses[[length(statuses) + 1L]] <- c(
+      list(version = previous_agent_info$agent_version), status
+    )
+    if (status$complete && is.null(completed)) {
+      completed <- previous_agent_info
+      if (stop_at_complete) break
+    }
+  }
+  list(versions = length(rows), statuses = statuses, completed = completed)
+}
+
+# Build an actionable error for a missing or incomplete Agent history: the
+# caller's headline, project and run-log search, version counts, up to five
+# incomplete versions with their problems, and the next step. A NULL history
+# means no previous run logs were read. Returns one message string.
+format_agent_history_error <- function(headline, project_info, history = NULL) {
+  statuses <- if (is.null(history)) list() else history$statuses
+  versions <- if (is.null(history)) 0L else history$versions
+  completed <- sum(vapply(statuses, function(status) isTRUE(status$complete), logical(1)))
+  incomplete <- Filter(function(status) !isTRUE(status$complete), statuses)
+  details <- vapply(utils::head(incomplete, 5L), function(status) {
+    paste0("v", status$version, " ", paste(status$problems, collapse = ", "))
+  }, character(1))
+  if (length(incomplete) > 5L) {
+    details <- c(details, paste("and", length(incomplete) - 5L, "more"))
+  }
+  project_path <- project_info$path %||% tempdir()
+
+  paste0(
+    headline, "\n",
+    "Project '", project_info$project_name, "': searched '", project_path,
+    "/logs' for run logs matching '", fs::path_file(agent_run_ledger_glob(project_info)), "'.\n",
+    "Found ", versions, " previous Agent version", if (versions == 1L) "" else "s",
+    "; ", completed, " completed.",
+    if (length(details)) paste0("\nIncomplete versions: ", paste(details, collapse = "; "), ".") else "",
+    "\nNext step: restore the Agent history under '", project_path,
+    "' or start a new history with iterate_forecast()."
+  )
+}
+
+# Gate a new update version on a completed predecessor before setup writes
+# anything. Every saved version is a candidate; checking stops at the newest
+# completed one and reads only its run metadata. Errors with diagnostics when
+# none is complete; otherwise reports the selected version. Returns the
+# predecessor info invisibly; nothing is written.
+require_completed_agent_predecessor <- function(project_info, llm, agent_runs_tbl) {
+  agent_info <- list(project_info = project_info, llm = llm, overwrite = TRUE)
+  history <- agent_predecessor_history(agent_info, agent_runs_tbl, stop_at_complete = TRUE)
+
+  if (is.null(history$completed)) {
+    headline <- if (history$versions == 0L) {
+      "Error in update_forecast(). No previous agent runs found."
+    } else {
+      "Error in update_forecast(). No completed previous agent run found."
+    }
+    stop(format_agent_history_error(headline, project_info, history), call. = FALSE)
+  }
+
+  versions <- history$versions
+  latest <- history$completed$agent_version
+  cli::cli_alert_info("Found {versions} Agent version{?s}; latest completed: v{latest}")
+  invisible(history$completed)
 }
 
 #' Parse one local update CSV through a single connection
@@ -1131,7 +1285,9 @@ completed_update_runs <- function(agent_info, metadata) {
 #'   For pre-expanded hierarchy ID input, generated labels with reassigned
 #'   surviving bottom members count as new nodes and use default-local routing.
 #'   This reads each parent hierarchy once by exact path; invalid metadata or
-#'   access failures remain errors.
+#'   access failures remain errors. Missing or incomplete Agent history errors
+#'   name the searched run logs, version counts, missing outputs per version and
+#'   the next step (restore history or start a new one with iterate_forecast()).
 #' @noRd
 initial_checks <- function(agent_info) {
   reject_agent_custom_update(agent_info)
@@ -1173,16 +1329,14 @@ initial_checks <- function(agent_info) {
   # load all agent runs
   agent_runs_list <- list_files(
     project_info$storage_object,
-    paste0(
-      agent_info$project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      "*agent_run.csv"
-    )
+    agent_run_ledger_glob(agent_info$project_info)
   )
 
   if (length(agent_runs_list) <= 1) {
-    stop("Error in update_forecast(). No previous agent runs found.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in update_forecast(). No previous agent runs found.",
+      agent_info$project_info
+    ), call. = FALSE)
   }
 
   # load previous agent run results (excluding current run)
@@ -1203,11 +1357,15 @@ initial_checks <- function(agent_info) {
 
   # ensure a completed previous run was found
   if (length(completed_runs) == 0) {
-    stop("Error in update_forecast(). No completed previous agent run found. ",
-      "Please ensure at least one prior agent version finished successfully ",
-      "before calling update_forecast().",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      paste0(
+        "Error in update_forecast(). No completed previous agent run found. ",
+        "Please ensure at least one prior agent version finished successfully ",
+        "before calling update_forecast()."
+      ),
+      agent_info$project_info,
+      agent_predecessor_history(agent_info, prev_agent_run_tbl)
+    ), call. = FALSE)
   }
 
   prev_agent_info <- completed_runs[[1]]$agent_info
@@ -1716,7 +1874,8 @@ check_update_failures <- function(agent_info,
 #'
 #' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
 #' Agent-log run IDs remain character while versions and accuracy retain numeric
-#' types. Missing completed predecessors and storage/read failures remain errors.
+#' types. Missing completed predecessors and storage/read failures remain errors;
+#' missing-history errors include the same run-log diagnostics as initial_checks().
 #' When every current custom-enrolled series is new, report the absent comparison
 #' explicitly and return NA rather than fabricate an accuracy percentage. Ordinary
 #' runs retain their absent-common-series error. No artifacts are written here.
@@ -1733,16 +1892,14 @@ analyze_results <- function(agent_info) {
   # load all agent runs
   agent_runs_list <- list_files(
     project_info$storage_object,
-    paste0(
-      agent_info$project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      "*agent_run.csv"
-    )
+    agent_run_ledger_glob(agent_info$project_info)
   )
 
   if (length(agent_runs_list) <= 1) {
-    stop("Error in update_forecast(). No previous agent runs found.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in update_forecast(). No previous agent runs found.",
+      agent_info$project_info
+    ), call. = FALSE)
   }
 
   # load previous agent run results (excluding current run)
@@ -1763,9 +1920,11 @@ analyze_results <- function(agent_info) {
 
   # ensure at least one completed previous run was found
   if (length(completed_runs) == 0) {
-    stop("Error in analyze_results(). No completed previous agent runs found to compare against.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in analyze_results(). No completed previous agent runs found to compare against.",
+      agent_info$project_info,
+      agent_predecessor_history(agent_info, prev_agent_run_tbl)
+    ), call. = FALSE)
   }
 
   previous_best_run_tbl <- completed_runs %>%
