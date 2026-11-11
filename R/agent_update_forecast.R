@@ -50,8 +50,16 @@
 #'   is incomplete or contains a rejected node is not reconciled; its covered
 #'   current series follow the existing default-local forecast path. Existing
 #'   nodes are matched by identity and surviving bottom membership, not position
-#'   or node count. Reassigned generated aggregate labels are treated as new
-#'   nodes rather than inheriting another aggregate's selection. When every
+#'   or node count. Standard-hierarchy parents are named by position (A, B,
+#'   AA, ...). If an existing letter now names a different group, a
+#'   standard-hierarchy Agent version's update stops and asks for the same
+#'   parent groups or a new history with [iterate_forecast()]. A standard-hierarchy
+#'   global model in a bottoms-up Agent version instead counts its series as
+#'   failed updates: within the failure limit they receive default local
+#'   forecasts, and above it the update stops with the same explanation.
+#'   Grouped hierarchies, which name nodes by value, still
+#'   route a reassigned label as a new node rather than inheriting another
+#'   aggregate's selection. When every
 #'   predecessor source node has the same selected model or average, new inner
 #'   hierarchy source nodes inherit that uniform choice. Their component and
 #'   average forecasts must pass the same checks before publication. This keeps
@@ -349,7 +357,8 @@ update_fcst_agent_workflow <- function(agent_info,
         global_failed_combos = "{results$update_global_models$failed_combos}",
         local_failed_combos = "{results$update_local_models$failed_combos}",
         global_quality_rejected = "{results$update_global_models$quality_rejected_combos}",
-        local_quality_rejected = "{results$update_local_models$quality_rejected_combos}"
+        local_quality_rejected = "{results$update_local_models$quality_rejected_combos}",
+        global_failure_reason = "{results$update_global_models$failure_reason}"
       )
     ),
     forecast_new_combos = list(
@@ -1282,10 +1291,12 @@ completed_update_runs <- function(agent_info, metadata) {
 #' @return A list with `prev_best_runs_tbl` (data frame of previous best runs),
 #'   `current_run_combos` (character vector of current combo hashes), and
 #'   `new_combos` (character vector of new combo hashes), or "no updates required".
-#'   For pre-expanded hierarchy ID input, generated labels with reassigned
+#'   For pre-expanded grouped-hierarchy ID input, generated labels with reassigned
 #'   surviving bottom members count as new nodes and use default-local routing.
 #'   This reads each parent hierarchy once by exact path; invalid metadata or
-#'   access failures remain errors. Missing or incomplete Agent history errors
+#'   access failures remain errors. Standard-hierarchy updates stop when a
+#'   parent letter now names a different group (see
+#'   check_standard_hierarchy_parents()). Missing or incomplete Agent history errors
 #'   name the searched run logs, version counts, missing outputs per version and
 #'   the next step (restore history or start a new one with iterate_forecast()).
 #' @noRd
@@ -1403,8 +1414,11 @@ initial_checks <- function(agent_info) {
     previous_info$run_name <- prev_agent_info$run_id
     current_info <- project_info
     current_info$run_name <- agent_info$run_id
-    changed_nodes <- changed_update_hierarchy_sources(
-      read_selection_hierarchy(previous_info), read_selection_hierarchy(current_info))
+    previous_hierarchy <- read_selection_hierarchy(previous_info)
+    current_hierarchy <- read_selection_hierarchy(current_info)
+    check_standard_hierarchy_parents(previous_hierarchy, current_hierarchy,
+      prev_agent_info$agent_version)
+    changed_nodes <- changed_update_hierarchy_sources(previous_hierarchy, current_hierarchy)
     new_combos <- union(new_combos,
       intersect(current_run_combos, vapply(changed_nodes, hash_data, character(1), USE.NAMES = FALSE)))
   }
@@ -1530,6 +1544,9 @@ initial_checks <- function(agent_info) {
 #' components or recovering inner hierarchical source choices from the fitted
 #' pool. Fitting failures use the existing local fallback; current-artifact
 #' access failures propagate and must not be reinterpreted as model failures.
+#' Reassigned standard-hierarchy parent letters, including from Spark's isolated
+#' R process, count as failed series; the result's `failure_reason` keeps their
+#' explanation for the failure-limit error.
 #' Active custom replay restores enrollment and propagates every failure without
 #' default fallback; its pinned group retains one global child identity. Dispatch
 #' carries only enrollment/replay references and restores both inside the worker.
@@ -1545,6 +1562,8 @@ initial_checks <- function(agent_info) {
 #'   of combo hashes that failed during the global model update), plus
 #'   `quality_rejected_combos`. A quality rejection is reported as such, never as
 #'   a finished global update; publication requires a complete accepted group.
+#'   A failed update may add `failure_reason`, the standard parent-change
+#'   explanation, or NULL for other failures.
 #' @noRd
 update_global_models <- function(agent_info,
                                  previous_best_run_tbl,
@@ -1623,19 +1642,35 @@ update_global_models <- function(agent_info,
 
   if (inherits(global_error, "condition")) {
     if (inherits(global_error, "finnts_update_artifact_error")) stop(global_error)
+    # A standard parent change leaves no reusable global choice, so its series
+    # count as failed updates: default fallback within the failure limit, and
+    # the explanation is kept for the limit error. Spark's isolated R process
+    # wraps the original condition as its parent.
+    hierarchy_error <- if (inherits(global_error, "finnts_hierarchy_change_error")) {
+      global_error
+    } else {
+      global_error[["parent"]]
+    }
+    failure_reason <- if (inherits(hierarchy_error, "finnts_hierarchy_change_error")) {
+      hierarchy_error$explanation
+    } else {
+      NULL
+    }
     if (!is.null(agent_info$custom_agent_contract) &&
       !inherits(global_error, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(global_error)
     # extract individual combos that were covered by the global model
     failed_global_combos <- unique(previous_best_run_global_tbl$combo)
     failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
+    failure_message <- failure_reason %||% conditionMessage(global_error)
     cli::cli_alert_warning(
-      "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {conditionMessage(global_error)}"
+      "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {failure_message}"
     )
     cli::cli_alert_info("Failed combos will be re-forecast using default local model inputs.")
     if (inherits(global_error, "finnts_forecast_selection_rejected")) {
       return(list(status = "Global forecast quality rejected", failed_combos = character(), quality_rejected_combos = failed_hashes))
     }
-    return(list(status = "Global model update failed", failed_combos = failed_hashes, quality_rejected_combos = character()))
+    return(list(status = "Global model update failed", failed_combos = failed_hashes,
+      quality_rejected_combos = character(), failure_reason = failure_reason))
   }
 
   rejected <- if (is.list(global_error)) global_error$quality_rejected_combos %||% character() else character()
@@ -1820,6 +1855,13 @@ update_local_models <- function(agent_info,
 #'   during global model update.
 #' @param local_failed_combos Character vector of combo hashes that failed
 #'   during local model update.
+#' @param global_quality_rejected Character vector of global combo hashes whose
+#'   updated forecasts failed quality checks; they do not count toward the limit.
+#' @param local_quality_rejected Character vector of local combo hashes whose
+#'   updated forecasts failed quality checks; they do not count toward the limit.
+#' @param global_failure_reason Optional explanation of why the global update
+#'   failed, such as a standard-hierarchy parent change. It is appended to the
+#'   limit error so the cause is visible; it never changes the limit.
 #'
 #' @return A character vector of all failed combo hashes that should be
 #'   re-forecast using default local model inputs.
@@ -1830,7 +1872,8 @@ check_update_failures <- function(agent_info,
                                   global_failed_combos,
                                   local_failed_combos,
                                   global_quality_rejected = character(),
-                                  local_quality_rejected = character()) {
+                                  local_quality_rejected = character(),
+                                  global_failure_reason = NULL) {
   failed_combos <- intersect(
     unique(c(global_failed_combos, local_failed_combos)),
     current_run_combos
@@ -1857,6 +1900,8 @@ check_update_failures <- function(agent_info,
       " existing series, floor of 10). Failed series: ",
       paste(resolved_names, collapse = ", "),
       ". Please use iterate_forecast() instead to retrain all models from scratch.",
+      if (length(global_failure_reason) == 1L && !is.na(global_failure_reason) &&
+        nzchar(global_failure_reason)) paste0("\n", global_failure_reason),
       call. = FALSE
     )
   }
@@ -2785,8 +2830,11 @@ update_forecast_combo <- function(agent_info,
 
   selection_cache <- new.env(parent = emptyenv())
   if (!is.null(selected_models$hierarchy)) {
-    selected_models <- extend_global_update_selection(selected_models,
-      read_selection_hierarchy(new_run_info, selection_cache))
+    current_hierarchy <- read_selection_hierarchy(new_run_info, selection_cache)
+    # Saved choices are matched by node name; stop before fitting when standard
+    # parent letters now name different groups.
+    check_standard_hierarchy_parents(selected_models$hierarchy, current_hierarchy)
+    selected_models <- extend_global_update_selection(selected_models, current_hierarchy)
   }
 
   if (isTRUE(prev_run_log_tbl$box_cox) || isTRUE(prev_run_log_tbl$stationary)) {

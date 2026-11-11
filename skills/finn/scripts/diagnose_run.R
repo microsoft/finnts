@@ -57,6 +57,13 @@ diagnose_patterns <- function() {
       "agent_approach_changed",
       "The forecast approach (for example hierarchical vs. standard) differs from the saved Agent version.",
       c("Restore the original approach setting to resume, or start a new Agent version with the user's confirmation.")),
+    # Before the failure-limit pattern: limit errors caused by a parent change
+    # also say "exceeds the limit", and the parent change is the actionable cause.
+    p("parent groups changed",
+      "hierarchy_parents_changed",
+      "The standard hierarchy's parent groups changed since the last Agent forecast, so a quick update cannot reuse their history.",
+      c(paste("Show the user which groups changed (the error lists them) and ask whether to restore the previous parent groups",
+        "in the data and run the update again, or start a new Agent history: run_forecast.R --mode=iterate --new=true --confirm=true after the user agrees."))),
     p("No previous agent runs found|No completed previous agent run",
       "update_needs_agent",
       "Updating needs a finished Agent forecast, and none was found.",

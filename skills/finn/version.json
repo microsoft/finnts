@@ -1,7 +1,14 @@
 {
-  "version": "0.3.3",
-  "released": "2026-11-07",
+  "version": "0.3.4",
+  "released": "2026-11-10",
   "changelog": [
+    {
+      "version": "0.3.4",
+      "date": "2026-11-10",
+      "changes": [
+        "Explains when an Agent update stops because a standard hierarchy's parent groups changed, and offers restoring the groups or starting a new Agent history."
+      ]
+    },
     {
       "version": "0.3.3",
       "date": "2026-11-07",

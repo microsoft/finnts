@@ -99,8 +99,16 @@ past iteration winners. A reused hierarchy that
 is incomplete or contains a rejected node is not reconciled; its covered
 current series follow the existing default-local forecast path. Existing
 nodes are matched by identity and surviving bottom membership, not position
-or node count. Reassigned generated aggregate labels are treated as new
-nodes rather than inheriting another aggregate's selection. When every
+or node count. Standard-hierarchy parents are named by position (A, B,
+AA, ...). If an existing letter now names a different group, a
+standard-hierarchy Agent version's update stops and asks for the same
+parent groups or a new history with \code{\link[=iterate_forecast]{iterate_forecast()}}. A standard-hierarchy
+global model in a bottoms-up Agent version instead counts its series as
+failed updates: within the failure limit they receive default local
+forecasts, and above it the update stops with the same explanation.
+Grouped hierarchies, which name nodes by value, still
+route a reassigned label as a new node rather than inheriting another
+aggregate's selection. When every
 predecessor source node has the same selected model or average, new inner
 hierarchy source nodes inherit that uniform choice. Their component and
 average forecasts must pass the same checks before publication. This keeps

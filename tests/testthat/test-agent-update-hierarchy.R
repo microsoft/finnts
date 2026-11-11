@@ -8,7 +8,15 @@ test_that("updates compare complete current topology rather than counts or order
     remove_first_group = base[3:4, ],
     same_count_replacement = rbind(base[1:3, ], data.frame(Region = "East", Product = "C")),
     add_and_remove = rbind(base[1:2, ], data.frame(Region = c("East", "East"), Product = c("A", "C"))),
-    input_reordering = base[4:1, ])
+    input_reordering = base[4:1, ],
+    replace_first_group = rbind(base[3:4, ], data.frame(Region = "Alpha", Product = c("A", "B"))))
+  # Standard parent letters are positional. These changes give an existing
+  # letter to a different group, so a standard update must stop rather than
+  # reuse or silently replace that group's saved choice. In last_group_member a
+  # single remaining product sorts the hierarchy levels Product-first, so "A"
+  # becomes Product A instead of North.
+  standard_parent_changes <- c("first_group_member", "last_group_member", "remove_first_group",
+    "same_count_replacement", "add_and_remove", "replace_first_group")
   for (approach in c("standard_hierarchy", "grouped_hierarchy")) {
     for (change in names(changes)) {
       path <- withr::local_tempdir()
@@ -18,6 +26,15 @@ test_that("updates compare complete current topology rather than counts or order
         members = changes[[change]], legacy = TRUE)
       expected_nodes <- current$hierarchy$hts_combos
       new_nodes <- setdiff(expected_nodes, previous$hierarchy$hts_combos)
+      if (approach == "standard_hierarchy" && change %in% standard_parent_changes) {
+        if (legacy) {
+          expect_warning(expect_error(run_update_chain_step(previous, current),
+            class = "finnts_hierarchy_change_error"), "Legacy global update")
+        } else {
+          expect_error(run_update_chain_step(previous, current), class = "finnts_hierarchy_change_error")
+        }
+        next
+      }
       if (legacy) {
         expect_warning(step <- run_update_chain_step(previous, current), "Legacy global update")
       } else step <- expect_no_warning(run_update_chain_step(previous, current))
@@ -83,6 +100,11 @@ test_that("iteration selection and hierarchy persistence survive membership repl
       current$hierarchy$original_combos)$selected_ids, mapping$selected_ids)
     reintroduced <- make_update_chain_case(path, "reintroduced", approach, members = base,
       legacy = TRUE, data_output = "csv")
+    # Removing East, the first standard parent, gives its letter to North.
+    if (approach == "standard_hierarchy") {
+      expect_error(run_update_chain_step(current, reintroduced), class = "finnts_hierarchy_change_error")
+      next
+    }
     outcome <- run_update_chain_step(current, reintroduced)
     if (length(changed_update_hierarchy_sources(current$hierarchy, reintroduced$hierarchy))) {
       expect_setequal(outcome$result$quality_rejected_combos,

@@ -43,6 +43,12 @@
 - `get_agent_forecast()` reads the exact required final artifact and errors when it is missing.
   - Missing CSV forecasts no longer return an empty table; storage and read failures propagate.
 - Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.
+- Agent forecast updates now detect when a standard hierarchy's parent groups change so that an existing parent node name (`A`, `B`, `AA`, ...) would refer to a different group.
+  - Standard-hierarchy parents are named by position, so such updates could reuse another group's history or model choice.
+  - Standard-hierarchy Agent versions stop with an error that lists the changed groups.
+  - In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates: within the failure limit (20% of series, at least 10) they get default forecasts; above it the update stops with the same explanation.
+  - Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally. Grouped hierarchies are unchanged.
+  - Keep the same parent groups, or start a new history with `iterate_forecast()`.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.

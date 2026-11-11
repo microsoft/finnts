@@ -1404,6 +1404,8 @@ with(dx, {
     "there is no package called 'glmnet'" = "missing_package",
     "Inputs have recently changed for this agent" = "agent_inputs_changed",
     "No previous agent runs found for this project" = "update_needs_agent",
+    "Error in update_forecast(). The standard hierarchy's parent groups changed since Agent version 3, so this update cannot reuse their history." = "hierarchy_parents_changed",
+    "Error in update_forecast(). 12 time series failed to update, which exceeds the limit of 10.\nThe standard hierarchy's parent groups changed since the previous Agent version, so this update cannot reuse their history." = "hierarchy_parents_changed",
     "Previous agent run included global models" = "update_model_mix",
     "HTTP 401 Unauthorized" = "llm_access",
     "No Copilot authentication is available. Set COPILOT_GITHUB_TOKEN" = "llm_access",
@@ -1424,6 +1426,10 @@ with(dx, {
       !grepl("resumes reread", config_fix, fixed = TRUE))
   check("diagnose: temporary file lock still recommends resume",
     any(grepl("then resume", diagnose_match("Permission denied")$fix, fixed = TRUE)))
+  parent_fix <- paste(diagnose_match("The standard hierarchy's parent groups changed")$fix, collapse = " ")
+  check("diagnose: parent-group changes offer restoring groups or a confirmed new Agent history",
+    grepl("restore the previous parent groups", parent_fix, fixed = TRUE) &&
+      grepl("--mode=iterate --new=true --confirm=true", parent_fix, fixed = TRUE))
   check("diagnose: no match returns NULL", is.null(diagnose_match("all good")) && is.null(diagnose_match("")))
   check("diagnose: every pattern is a valid regex", all(vapply(diagnose_patterns(), function(p) {
     !inherits(try(grepl(p$pattern, "x", perl = TRUE), silent = TRUE), "try-error") && length(p$fix) > 0
