@@ -784,7 +784,8 @@ local({
     "Region,Date,Value", "001,2024-01-01,10", ",2024-02-01,11", "1,2024-03-01,"
   ))
   gate_data <- NULL
-  # Mirror the package's R6 blank predicate and capture the exact validator input.
+  # A validator that rejects blank identifiers stands in for any failed input rule
+  # (finnts itself treats blanks as missing) and captures the exact validator input.
   validator <- function(input_data, ...) {
     gate_data <<- input_data
     failed <- any(!is.na(input_data$Region) & trimws(input_data$Region) == "")
@@ -799,7 +800,7 @@ local({
     identical(gate_data$Region, c("001", "", "1")) && identical(gate_data$Region, worker_data$Region) &&
       identical(gate_data$Date, worker_data$Date) && identical(gate_data$Value, worker_data$Value) &&
       is.na(gate_data$Value[3]))
-  check("transform: a blank identifier fails verification without an approval token",
+  check("transform: a failed input rule blocks verification without an approval token",
     !isTRUE(result$gate$passed) && is.null(result$token) && identical(tx_status(result)[["R6"]], "fail"))
 })
 

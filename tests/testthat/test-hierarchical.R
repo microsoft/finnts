@@ -491,7 +491,7 @@ test_that("standard hierarchy structure is unchanged by missing combo values", {
   )
 })
 
-test_that("grouped hierarchy rejects a column mixing missing values and NA text", {
+test_that("standard and grouped hierarchies reject a column mixing missing values and NA text", {
   combos <- data.frame(Leader = c(NA, "NA", "North", "North"), Product = c("X", "Y", "X", "Y"),
     stringsAsFactors = FALSE)
   data <- merge(combos, data.frame(Date = as.Date(c("2020-01-01", "2020-02-01", "2020-03-01"))))
@@ -513,12 +513,14 @@ test_that("grouped hierarchy rejects a column mixing missing values and NA text"
   expect_error(get_grouped_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
   expect_identical(writes, 0L)
 
-  # Standard hierarchies keep the two values as separate parents.
-  standard <- prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
-    c("Leader", "Product"), NULL, "standard_hierarchy", 12)
-  expect_false(anyDuplicated(standard[c("Combo", "Date")]) > 0)
-  expect_equal(standard$Target[standard$Combo == "Total" & standard$Date == as.Date("2020-01-01")],
-    sum(data$Target[data$Date == as.Date("2020-01-01")]))
+  # Standard hierarchies reject the mix too, before writing anything.
+  expect_error(
+    prep_hierarchical_data(data, artifact_test_run(withr::local_tempdir()),
+      c("Leader", "Product"), NULL, "standard_hierarchy", 12),
+    "Combo column 'Leader' contains both missing values and the text \"NA\"", fixed = TRUE
+  )
+  expect_error(get_standard_nodes(combos, c("Leader", "Product")), "Combo column 'Leader'", fixed = TRUE)
+  expect_identical(writes, 0L)
 })
 
 test_that("grouped hierarchy treats NaN-only combo values as missing and reconciles", {

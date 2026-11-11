@@ -32,6 +32,14 @@
   - A combo column with both missing values and literal `"NA"` text now errors instead of merging them.
   - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
   - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
+- Combo values that are blank after trimming whitespace are now treated as missing values instead of stopping preparation.
+  - Like other missing values, they form the `"NA"` label in series and hierarchy names (for example `North--NA` or `Site_NA`), so empty cells give the same result whichever file reader produced them.
+  - `validate_prepared_input()` rule `R6` passes and names the affected columns; `detect_hierarchy()` accepts blanks too.
+  - Numeric combo columns, targets and external regressors are unchanged, and existing series names do not change.
+- A combo column with both missing (or blank) values and the literal text `"NA"` now has a clear outcome for every forecast approach.
+  - Bottoms-up forecasts warn and keep combining them into one series, as before.
+  - Standard hierarchies now stop with the error grouped hierarchies already raise, naming the column; previously some inputs failed later with an unclear `hts` error.
+  - The duplicate-row error now also explains that blank, missing and `"NA"` values share one label.
 - Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
   - Previously these series silently received missing regressor values.
   - Series names are unchanged.
@@ -85,7 +93,7 @@
   -   Predecessor metadata validates reuse fields only; other final outputs are not checked for schema, combo, or model identity.
   -   Storage and read failures remain hard errors during predecessor selection.
 -   Agent duplicate detection treats `NULL` defaults, equivalent explicit values, and reordered multipart settings as identical, avoiding redundant iterations.
--   Trimmed character combo boundaries before validation and hashing, aligning artifacts across workflows; blank values and normalization collisions fail early.
+-   Trimmed character combo boundaries before validation and hashing, aligning artifacts across workflows; normalization collisions fail early.
 -   Agent EDA summaries report absent outlier dates and omit non-finite regressor-lag correlations, keeping infinite values out of LLM context.
 -   Missing intermediate forecasts now explain incomplete or inconsistent runs and recommend restarting or regenerating the missing step.
 -   Validated custom `seasonal_period` values reach `stlm-arima`, `stlm-ets`, and `tbats`; default `NULL` remains logged as `NA`.

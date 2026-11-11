@@ -1,7 +1,14 @@
 {
-  "version": "0.3.4",
-  "released": "2026-11-10",
+  "version": "0.3.5",
+  "released": "2026-11-11",
   "changelog": [
+    {
+      "version": "0.3.5",
+      "date": "2026-11-11",
+      "changes": [
+        "Explains that blank series identifiers are no longer rejected: finnts treats them as missing values that form the \"NA\" series label."
+      ]
+    },
     {
       "version": "0.3.4",
       "date": "2026-11-10",

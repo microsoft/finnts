@@ -116,13 +116,16 @@ test_that("R5 fails when the target is not numeric", {
   expect_match(check_message(result, "R5"), "needs to be numeric")
 })
 
-test_that("R6 fails on combo values that are blank after trimming", {
+test_that("R6 passes and names combo columns whose blank values become the NA label", {
   data <- validation_monthly_data()
-  data$id[1] <- "   "
+  data$id[data$id == "C"] <- "   "
   result <- validate_monthly(data)
 
-  expect_equal(check_status(result, "R6"), "fail")
-  expect_match(check_message(result, "R6"), "cannot be blank")
+  expect_true(result$passed)
+  expect_equal(check_status(result, "R6"), "pass")
+  expect_match(check_message(result, "R6"), "Blank values in combo column(s) id are treated as missing", fixed = TRUE)
+  expect_equal(result$summary$n_series, 3L)
+  expect_identical(check_message(validate_monthly(validation_monthly_data()), "R6"), "Passed.")
 })
 
 test_that("R7 fails on duplicates that differ only by whitespace", {
@@ -202,10 +205,9 @@ test_that("R11 fails when a Spark table runs without Spark processing", {
 test_that("validator reports every failed input rule instead of stopping", {
   data <- validation_monthly_data()
   data$value <- as.character(data$value)
-  data$id[1] <- " "
-  result <- validate_monthly(data, fiscal_year_start = 0)
+  result <- validate_monthly(data, external_regressors = "Date", fiscal_year_start = 0)
 
-  expect_setequal(result$checks$Rule[result$checks$Status == "fail"], c("R5", "R6", "R10"))
+  expect_setequal(result$checks$Rule[result$checks$Status == "fail"], c("R2", "R5", "R10"))
 })
 
 test_that("check_input_data still stops on the first rule with the same message", {
@@ -248,7 +250,7 @@ test_that("R12 passes valid hierarchies and does not apply to bottoms_up", {
   expect_match(check_message(bottoms_up, "R12"), "Not applicable to bottoms_up")
 })
 
-test_that("R12 fails a grouped column mixing missing values and NA text with the prep_data message", {
+test_that("R12 fails a standard or grouped column mixing missing values and NA text with the prep_data message", {
   combos <- data.frame(Leader = c(NA, "NA", "North", "North"), Product = c("X", "Y", "X", "Y"),
     stringsAsFactors = FALSE)
   data <- validation_hierarchy_data(combos)
@@ -267,8 +269,10 @@ test_that("R12 fails a grouped column mixing missing values and NA text with the
   )
   expect_identical(check_message(result, "R12"), prep_error)
 
-  # Standard hierarchies and bottoms-up forecasts keep the two values apart.
-  expect_equal(check_status(validate_hierarchy(data, "standard_hierarchy"), "R12"), "pass")
+  # Standard hierarchies reject the mix too; bottoms-up forecasts keep combining them.
+  standard <- validate_hierarchy(data, "standard_hierarchy")
+  expect_equal(check_status(standard, "R12"), "fail")
+  expect_identical(check_message(standard, "R12"), prep_error)
   expect_true(validate_hierarchy(data, "bottoms_up")$passed)
 })
 
@@ -357,13 +361,14 @@ test_that("R12 ignores series that combo_cleanup_date removes, as preparation do
   expect_equal(check_status(cleaned, "P6"), "report")
 })
 
-test_that("R12 is skipped when the combo values it needs are invalid", {
-  data <- validation_hierarchy_data(data.frame(Leader = c("A", " "), Product = c("X", "Y")))
-  result <- validate_hierarchy(data, "grouped_hierarchy")
-  expect_equal(check_status(result, "R6"), "fail")
+test_that("R12 is skipped when an input rule it needs fails", {
+  valid <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
+  text_target <- valid
+  text_target$value <- as.character(text_target$value)
+  result <- validate_hierarchy(text_target, "grouped_hierarchy")
+  expect_equal(check_status(result, "R5"), "fail")
   expect_equal(check_status(result, "R12"), "skipped")
 
-  valid <- validation_hierarchy_data(data.frame(Leader = c("A", "A", "B", "B"), Product = c("X", "Y", "X", "Y")))
   duplicated_rows <- validate_hierarchy(rbind(valid, valid[1, ]), "grouped_hierarchy")
   expect_equal(check_status(duplicated_rows, "R7"), "fail")
   expect_equal(check_status(duplicated_rows, "R12"), "skipped")

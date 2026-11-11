@@ -206,7 +206,7 @@ arrange_hierarchy_input <- function(input_data,
 #' ordered with `arrange_hierarchy_input()`, nodes come from
 #' `pick_right_hierarchy()`, and names from `hts_node_names()` on an all-zero
 #' two-period panel. Used by `validate_prepared_input()` so validation raises the
-#' same errors as preparation, such as a grouped column mixing missing values and
+#' same errors as preparation, such as a combo column mixing missing values and
 #' `"NA"` text, colliding series names, or fewer than two series.
 #'
 #' @param input_data local data frame with a `Combo` column and the combo
@@ -299,22 +299,26 @@ pick_right_hierarchy <- function(input_data,
 
 #' Reject a combo column whose missing values cannot be told apart
 #'
-#' Grouped hierarchies and `detect_hierarchy()` treat missing combo values as
-#' the `"NA"` label, and numeric `NaN` as missing. A column holding a missing
-#' value together with the literal text `"NA"`, or numeric `NA` together with
-#' `NaN`, would merge two distinct series groups into one, so it is rejected.
-#' Combo names still distinguish them (`tidyr::unite()` writes `"NA"` and
-#' `"NaN"`), so bottoms-up and standard hierarchies are unaffected.
+#' finnts names a missing combo value `"NA"`, both in `tidyr::unite()` combo
+#' names and in hierarchy labels, and blank values are already missing after
+#' `normalize_combo_values()`. A column holding a missing value together with
+#' the literal text `"NA"` therefore merges two distinct groups or series, so
+#' standard and grouped hierarchies and `detect_hierarchy()` reject it;
+#' bottoms-up input only warns in `check_input_mixed_missing_labels()`.
+#' Grouped hierarchies and `detect_hierarchy()` also treat numeric `NaN` as
+#' missing, so `include_nan = TRUE` also rejects numeric `NA` together with
+#' `NaN`. Standard hierarchies keep their distinct `"NA"` and `"NaN"` names.
 #'
-#' @param values combo column values, already whitespace-trimmed when
-#'   character-like; factors are compared by their labels
+#' @param values combo column values, already normalized when character-like;
+#'   factors are compared by their labels
 #' @param variable combo column name used in the error message
+#' @param include_nan whether numeric `NA` together with `NaN` is rejected
 #'
 #' @return `NULL` invisibly; stops with an actionable error naming the column
-#'   when it mixes either pair. No I/O.
+#'   when it mixes a rejected pair. No I/O.
 #' @noRd
-check_mixed_missing_labels <- function(values, variable) {
-  if (is.numeric(values) && any(is.nan(values)) && any(is.na(values) & !is.nan(values))) {
+check_mixed_missing_labels <- function(values, variable, include_nan = TRUE) {
+  if (include_nan && is.numeric(values) && any(is.nan(values)) && any(is.na(values) & !is.nan(values))) {
     stop(
       "Combo column '", variable, "' contains both NA and NaN values, ",
       "which a grouped hierarchy treats as one missing label. Use one of them ",
@@ -443,13 +447,23 @@ get_grouped_nodes <- function(input_data,
 
 #' Standard hierarchy structure
 #'
-#' @param input_data initial historical data
+#' Counts the child nodes under each parent, with levels ordered by increasing
+#' distinct count. A combo column mixing missing values with the text `"NA"`
+#' stops with an error before any counting, because the two would share one
+#' series name; numeric `NA` and `NaN` stay distinct.
+#'
+#' @param input_data distinct combo rows, one per bottom series
 #' @param combo_variables combo variables
 #'
-#' @return hierarchy structure
+#' @return hierarchy structure: the top-level node count, then one vector of
+#'   child counts per lower level
 #' @noRd
 get_standard_nodes <- function(input_data,
                                combo_variables) {
+  for (variable in combo_variables) {
+    check_mixed_missing_labels(input_data[[variable]], variable, include_nan = FALSE)
+  }
+
   hierarchy_length_tbl <- tibble::tibble()
 
   node_list <- list()

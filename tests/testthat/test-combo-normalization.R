@@ -18,24 +18,90 @@ test_that("combo normalization trims only character-like identifier boundaries",
   expect_type(normalized$Numeric_ID, "double")
 })
 
-test_that("combo validation rejects values that become blank", {
+test_that("combo normalization treats values left blank by trimming as missing", {
   input_data <- tibble::tibble(
-    ID = c("A", "   "),
+    Region = c("", "   ", " North  America ", NA_character_),
+    Segment = factor(c(" ", "Enterprise", "Consumer", "Consumer")),
+    Numeric_ID = c(1, NA, NaN, 4),
+    Driver = c("", "x", "y", "z"),
+    Target = c(NA, 2, 3, 4)
+  )
+
+  normalized <- normalize_combo_values(
+    input_data = input_data,
+    combo_variables = c("Region", "Segment", "Numeric_ID")
+  )
+
+  expect_identical(normalized$Region, c(NA, NA, "North  America", NA))
+  expect_identical(normalized$Segment, c(NA, "Enterprise", "Consumer", "Consumer"))
+  expect_identical(normalized$Numeric_ID, input_data$Numeric_ID)
+  expect_identical(normalized$Driver, input_data$Driver)
+  expect_identical(normalized$Target, input_data$Target)
+})
+
+# Run the shared input checks on monthly rows with a numeric `Target` column.
+# Returns what check_input_data() returns; errors and warnings propagate. No I/O.
+check_combo_input <- function(input_data, combo_variables) {
+  check_input_data(
+    input_data = input_data,
+    combo_variables = combo_variables,
+    target_variable = "Target",
+    external_regressors = NULL,
+    date_type = "month",
+    fiscal_year_start = 1,
+    parallel_processing = NULL
+  )
+}
+
+test_that("combo validation accepts values that become blank as missing values", {
+  input_data <- tibble::tibble(
+    ID = c("A", "   ", ""),
+    Date = as.Date(c("2024-01-01", "2024-02-01", "2024-03-01")),
+    Target = c(10, 20, 30)
+  )
+
+  expect_silent(check_combo_input(input_data, "ID"))
+})
+
+test_that("combo validation warns when a column mixes missing values and NA text", {
+  mixed <- tibble::tibble(
+    Leader = c(NA, "NA", " ", "North"),
+    Product = c("X", "Y", "Z", "X"),
+    Date = as.Date("2024-01-01"),
+    Target = c(1, 2, 3, 4)
+  )
+  expect_warning(
+    check_combo_input(mixed, c("Leader", "Product")),
+    "Combo column 'Leader' contains both missing values and the text \"NA\"",
+    fixed = TRUE
+  )
+
+  blank_and_text <- tibble::tibble(
+    ID = c("", " NA "),
     Date = as.Date(c("2024-01-01", "2024-02-01")),
+    Target = c(1, 2)
+  )
+  expect_warning(check_combo_input(blank_and_text, "ID"), "Combo column 'ID'", fixed = TRUE)
+
+  # Either form alone, and numeric NA with NaN, keep their existing behavior.
+  missing_only <- dplyr::mutate(mixed, Leader = c(NA, NA, " ", "North"))
+  expect_silent(check_combo_input(missing_only, c("Leader", "Product")))
+  text_only <- dplyr::mutate(mixed, Leader = c("NA", "NA", "NA", "North"))
+  expect_silent(check_combo_input(text_only, c("Leader", "Product")))
+  numeric <- tibble::tibble(ID = c(NA, NaN, 1), Date = as.Date("2024-01-01"), Target = c(1, 2, 3))
+  expect_silent(check_combo_input(numeric, "ID"))
+})
+
+test_that("duplicate errors explain that blank, missing and NA text values share one label", {
+  input_data <- tibble::tibble(
+    ID = c("", "NA"),
+    Date = as.Date(c("2024-01-01", "2024-01-01")),
     Target = c(10, 20)
   )
 
   expect_error(
-    check_input_data(
-      input_data = input_data,
-      combo_variables = "ID",
-      target_variable = "Target",
-      external_regressors = NULL,
-      date_type = "month",
-      fiscal_year_start = 1,
-      parallel_processing = NULL
-    ),
-    "cannot be blank after trimming.*Affected columns: ID.*2024-02-01"
+    suppressWarnings(check_combo_input(input_data, "ID")),
+    "Found 2 duplicate rows.*Blank values, missing values and the text \"NA\" also identify the same series"
   )
 })
 
@@ -168,4 +234,42 @@ test_that("prep_data uses the same canonical combo identity", {
   expect_equal(unique(prepped$Region), "North America")
   expect_equal(unique(prepped$Segment), "Enterprise Sales")
   expect_equal(hash_data(unique(prepped$Combo)), hash_data(expected_combo))
+})
+
+test_that("prep_data gives blank combo values the NA label in every forecast approach", {
+  history_dates <- seq.Date(as.Date("2022-01-01"), by = "month", length.out = 24)
+  combos <- tibble::tibble(Region = c("North", "North", "South"), Site = c("A", "  ", ""))
+  input_data <- tidyr::expand_grid(combos, Date = history_dates) %>%
+    dplyr::mutate(Revenue = as.numeric(dplyr::row_number()) + 100)
+  expected <- list(
+    bottoms_up = c("North--A", "North--NA", "South--NA"),
+    standard_hierarchy = c("North_A", "North_NA", "South_NA"),
+    grouped_hierarchy = c("North_A", "North_NA", "South_NA", "Site_NA")
+  )
+
+  for (approach in names(expected)) {
+    run_info <- set_run_info(
+      project_name = paste0("blank_combo_", approach),
+      run_name = "blank_run",
+      path = withr::local_tempdir(),
+      add_unique_id = FALSE
+    )
+    suppressWarnings(prep_data(
+      run_info = run_info,
+      input_data = input_data,
+      combo_variables = c("Region", "Site"),
+      target_variable = "Revenue",
+      date_type = "month",
+      forecast_horizon = 3,
+      forecast_approach = approach,
+      box_cox = FALSE,
+      stationary = FALSE,
+      lag_periods = 3,
+      rolling_window_periods = 3,
+      recipes_to_run = "R1"
+    ))
+
+    prepped_combos <- unique(get_prepped_data(run_info, recipe = "R1")$Combo)
+    expect_true(all(expected[[approach]] %in% prepped_combos), info = approach)
+  }
 })

@@ -20,18 +20,21 @@
 #' * `R3` the date column is named `Date` and has class Date.
 #' * `R4` combo variables are not date columns.
 #' * `R5` the target is numeric.
-#' * `R6` combo values are not blank after trimming whitespace.
+#' * `R6` reports combo columns with values that are blank after trimming
+#'   whitespace. They are treated as missing values and form the `"NA"` label
+#'   in series names. Always passes.
 #' * `R7` each combo and `Date` pair appears once.
 #' * `R8` month, quarter and year dates fall on one day of the month.
 #' * `R9` `date_type` is valid and is not finer or coarser than the data.
 #' * `R10` `fiscal_year_start` is a number from 1 to 12.
 #' * `R11` Spark tables run with Spark parallel processing.
 #' * `R12` standard and grouped hierarchies can name every series and map every
-#'   external regressor: no grouped combo column mixes missing values with the
-#'   text `"NA"` or numeric `NA` with `NaN`, no two series map to the same name
-#'   after name cleanup, at least two series remain after `combo_cleanup_date`,
-#'   and no external regressor has `NaN`, infinite or conflicting values or an
-#'   ambiguous source level. Always passes for `bottoms_up`.
+#'   external regressor: no combo column mixes missing or blank values with the
+#'   text `"NA"`, no grouped numeric combo column mixes `NA` with `NaN`, no two
+#'   series map to the same name after name cleanup, at least two series remain
+#'   after `combo_cleanup_date`, and no external regressor has `NaN`, infinite
+#'   or conflicting values or an ambiguous source level. Always passes for
+#'   `bottoms_up`.
 #' * `P1` history end date and the rows treated as future periods.
 #' * `P2` external regressors with future values and their coverage.
 #' * `P3` missing periods that preparation pads.
@@ -155,6 +158,7 @@ validate_prepared_input <- function(input_data,
     check_input_columns(data, combo_variables, target_variable, external_regressors)
   })
 
+  blank_columns <- blank_combo_columns(data, combo_variables)
   data <- normalize_combo_values(
     input_data = data,
     combo_variables = combo_variables
@@ -166,7 +170,15 @@ validate_prepared_input <- function(input_data,
   run_rule("R3", character(), function() check_input_date_column(data))
   run_rule("R4", "R1", function() check_input_combo_types(data, combo_variables))
   run_rule("R5", "R1", function() check_input_target_numeric(data, target_variable))
-  run_rule("R6", c("R1", "R3"), function() check_input_blank_combos(data, combo_variables))
+  # Blank combo values are normalized to missing values, so R6 only reports them.
+  run_rule("R6", c("R1", "R3"), function() {
+    if (length(blank_columns) > 0) {
+      list(status = "pass", message = paste0(
+        "Blank values in combo column(s) ", paste(blank_columns, collapse = ", "),
+        " are treated as missing and form the \"NA\" label in series names."
+      ))
+    }
+  })
   run_rule("R7", c("R1", "R3"), function() check_input_duplicates(data, combo_variables))
   run_rule("R9", c("R1", "R3"), function() validation_check_frequency(data, combo_variables, date_type))
   run_rule("R8", c("R3", "R9"), function() check_input_date_alignment(data, date_type))
@@ -261,7 +273,7 @@ validation_check_row <- function(rule, status, message) {
     R3 = "Date column is named Date and has class Date",
     R4 = "Combo variables are not dates",
     R5 = "Target is numeric",
-    R6 = "Combo values are not blank after trimming",
+    R6 = "Blank combo values are treated as missing",
     R7 = "Each combo and Date pair appears once",
     R8 = "Period dates fall on the same day of the month",
     R9 = "date_type is valid and matches the data frequency",
@@ -290,9 +302,10 @@ validation_check_row <- function(rule, status, message) {
 #' For standard and grouped hierarchies, builds the hierarchy's series names
 #' through `hierarchy_series_names()` and maps each external regressor through
 #' `external_regressor_mapping()`, the same helpers `prep_data()` uses, so a
-#' failure carries the `prep_data()` message. It fails when a grouped combo
-#' column mixes missing values and literal `"NA"` text or numeric `NA` and
-#' `NaN`, when two series map to the same name after name cleanup, when fewer
+#' failure carries the `prep_data()` message. It fails when a standard or
+#' grouped combo column mixes missing values and literal `"NA"` text, when a
+#' grouped numeric combo column mixes `NA` and `NaN`, when two series map to
+#' the same name after name cleanup, when fewer
 #' than two series remain, or when a regressor has `NaN` or infinite values,
 #' conflicting values, or an ambiguous source level. Missing regressor values
 #' alone are allowed.
