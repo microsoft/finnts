@@ -32,6 +32,8 @@ for isolated agent sessions.}
 \item{input_data}{A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed
 before Finn creates internal series identifiers and writes input artifacts.
+Values left blank are treated as missing and form the \code{"NA"} label in
+series names, like other missing combo values.
 Resuming a version uses previously uploaded inputs, not replacement values
 from this data frame. Create a new version to use revised data.}
 

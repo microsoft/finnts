@@ -1,7 +1,28 @@
 {
-  "version": "0.3.3",
-  "released": "2026-11-07",
+  "version": "0.3.6",
+  "released": "2026-11-12",
   "changelog": [
+    {
+      "version": "0.3.6",
+      "date": "2026-11-12",
+      "changes": [
+        "After a standard hierarchy's parent groups change, restoring the groups now starts a fresh update instead of resuming the failed one, which kept its saved data."
+      ]
+    },
+    {
+      "version": "0.3.5",
+      "date": "2026-11-11",
+      "changes": [
+        "Explains that blank series identifiers are no longer rejected: finnts treats them as missing values that form the \"NA\" series label."
+      ]
+    },
+    {
+      "version": "0.3.4",
+      "date": "2026-11-10",
+      "changes": [
+        "Explains when an Agent update stops because a standard hierarchy's parent groups changed, and offers restoring the groups or starting a new Agent history."
+      ]
+    },
     {
       "version": "0.3.3",
       "date": "2026-11-07",

@@ -10,6 +10,8 @@
 #' @param input_data A data frame or tibble containing the input data. Leading
 #'   and trailing whitespace in character combo-variable values is removed
 #'   before Finn creates internal series identifiers and writes input artifacts.
+#'   Values left blank are treated as missing and form the `"NA"` label in
+#'   series names, like other missing combo values.
 #'   Resuming a version uses previously uploaded inputs, not replacement values
 #'   from this data frame. Create a new version to use revised data.
 #' @param forecast_horizon The number of periods to forecast
@@ -593,6 +595,11 @@ set_agent_info_impl <- function(project_info,
 #' @details Matching request IDs resume their exact saved run, not the latest
 #'   version. Saved settings are still validated and retry artifacts are not
 #'   rewritten. Missing run identities or duplicate request matches fail.
+#'   A new `update_forecast` request first requires a completed predecessor
+#'   version and errors before writing any input, custom record or run log when
+#'   none exists; request-ID resumes skip that check. The request ID is then
+#'   recorded on the new version's own run log, read by exact path, so its
+#'   saved columns are unchanged apart from `request_id`.
 #'
 #' @return A list containing the agent run information
 #' @noRd
@@ -689,6 +696,12 @@ set_agent_info_custom <- function(project_info,
     return(agent_info)
   }
 
+  # A new update version needs a completed predecessor. Check before any write
+  # so a missing history cannot leave an orphan version for retries to resume.
+  if (agent_action == "update_forecast") {
+    require_completed_agent_predecessor(project_info, llm, agent_runs_tbl)
+  }
+
   if (nrow(agent_runs_tbl) > 0 && nrow(agent_run_request_id_tbl) == 0 & overwrite == TRUE) {
     # create new agent run info with overwrite = TRUE
     agent_args$overwrite <- TRUE
@@ -698,22 +711,25 @@ set_agent_info_custom <- function(project_info,
     agent_info <- do.call("set_agent_info", agent_args, quote = TRUE)
   }
 
-  # load latest agent runs again
-  new_agent_runs_tbl <- load_agent_runs(project_info)
-
-  # filter on latest run and add request id
-  new_agent_runs_tbl <- new_agent_runs_tbl %>%
-    dplyr::filter(
-      agent_version == agent_info$agent_version,
-      run_id == agent_info$run_id
-    ) %>%
-    dplyr::mutate(request_id = as.character(request_id_value))
-
-  # write updated run info with request id to disc
+  # Record the request on this version's own run log by exact path, so the file
+  # keeps exactly its saved columns plus request_id.
   project_info$run_name <- agent_info$run_id
+  run_log <- read_exact_artifact(
+    project_info,
+    local_artifact_path(project_info, "logs", "-agent_run", extension = "csv"),
+    character_columns = c("run_id", "request_id")
+  )
+  if (nrow(run_log) != 1L ||
+    !identical(as.character(run_log$run_id), as.character(agent_info$run_id))) {
+    stop("Cannot record request_id: the Agent run log for run ", agent_info$run_id,
+      " does not contain exactly that run. Restore the run log or start a new request.",
+      call. = FALSE
+    )
+  }
+  run_log$request_id <- as.character(request_id_value)
 
   write_data(
-    x = new_agent_runs_tbl,
+    x = run_log,
     combo = NULL,
     run_info = project_info,
     output_type = "log",
@@ -764,11 +780,14 @@ align_types <- function(df1, df2) {
 
 #' Load Latest Agent Run Information
 #'
-#' This function loads the latest agent run information for a given Finn project.
+#' This function loads every saved Agent run log for a given Finn project.
 #'
 #' @param project_info A Finn project from `set_project_info()`
 #'
-#' @return A data frame containing the latest agent run information.
+#' @return A data frame with one row per saved run log, or an empty tibble.
+#'   Run logs are always CSV, whatever the project's `data_output`. `run_id`
+#'   and `request_id` stay exact text so numeric-looking identifiers keep their
+#'   artifact paths and request matches; other columns keep inferred types.
 #'   Optional textual custom enrollment markers are retained without granting
 #'   approval; setup verifies their exact parent record before existing-run reuse.
 #' @noRd
@@ -776,10 +795,7 @@ load_agent_runs <- function(project_info) {
   # list agent runs
   agent_runs_list <- list_files(
     project_info$storage_object,
-    paste0(
-      project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      "*agent_run.", project_info$data_output
-    )
+    agent_run_ledger_glob(project_info)
   )
 
   if (length(agent_runs_list)) {
@@ -787,11 +803,22 @@ load_agent_runs <- function(project_info) {
     agent_runs_tbl <- read_file(
       run_info = project_info,
       file_list = agent_runs_list,
-      return_type = "df"
+      return_type = "df",
+      character_columns = c("run_id", "request_id")
     )
   } else {
     agent_runs_tbl <- tibble::tibble()
   }
 
   return(agent_runs_tbl)
+}
+
+# Glob matching every Agent run log in a project. write_data() always saves
+# logs as CSV, so parquet projects must not search for parquet run logs.
+# Returns one character pattern for list_files(); nothing is read or written.
+agent_run_ledger_glob <- function(project_info) {
+  paste0(
+    project_info$path, "/logs/*", hash_data(project_info$project_name),
+    "-*agent_run.csv"
+  )
 }

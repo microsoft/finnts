@@ -22,11 +22,15 @@ local({
 #' Known failure patterns
 #'
 #' Each entry has a regex `pattern`, a `category`, a user-facing `cause`, and
-#' agent-facing `fix` steps. Order matters: the first match wins.
+#' agent-facing `fix` steps. `resume = FALSE` marks failures that resuming the
+#' same run cannot fix, so no generic resume step is added. Order matters: the
+#' first match wins.
 #'
 #' @return List of pattern entries.
 diagnose_patterns <- function() {
-  p <- function(pattern, category, cause, fix) list(pattern = pattern, category = category, cause = cause, fix = fix)
+  p <- function(pattern, category, cause, fix, resume = TRUE) {
+    list(pattern = pattern, category = category, cause = cause, fix = fix, resume = resume)
+  }
   list(
     p("No space left on device|disk (is )?full|not enough space on the disk|There is not enough space",
       "disk_space",
@@ -57,6 +61,18 @@ diagnose_patterns <- function() {
       "agent_approach_changed",
       "The forecast approach (for example hierarchical vs. standard) differs from the saved Agent version.",
       c("Restore the original approach setting to resume, or start a new Agent version with the user's confirmation.")),
+    # Before the failure-limit pattern: limit errors caused by a parent change
+    # also say "exceeds the limit", and the parent change is the actionable cause.
+    # Resuming reuses the failed request's saved inputs, so restored groups need
+    # a fresh update request.
+    p("parent groups changed",
+      "hierarchy_parents_changed",
+      "The standard hierarchy's parent groups changed since the last Agent forecast, so a quick update cannot reuse their history.",
+      c("Show the user which groups changed (the error lists them) and ask which they want:",
+        paste("restore the previous parent groups in the data, then start a fresh update with",
+          "run_forecast.R --mode=update --new=true --confirm=true (resuming the failed update keeps its saved data and fails again);"),
+        "or start a new Agent history with run_forecast.R --mode=iterate --new=true --confirm=true after the user agrees."),
+      resume = FALSE),
     p("No previous agent runs found|No completed previous agent run",
       "update_needs_agent",
       "Updating needs a finished Agent forecast, and none was found.",
@@ -355,7 +371,7 @@ diagnose_run <- function(args, paths) {
   base$category <- hit$category
   base$cause <- hit$cause
   finn_result(TRUE, "diagnosed", hit$cause, base,
-    c(hit$fix, paste("After fixing, resume with", resume, "(keeps saved progress and history).")))
+    c(hit$fix, if (!isFALSE(hit$resume)) paste("After fixing, resume with", resume, "(keeps saved progress and history).")))
 }
 
 finn_main(function(args) {

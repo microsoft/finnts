@@ -1461,7 +1461,7 @@ finn_tx_gate <- function(ctx, spec, cfg, validator = finn_tx_default_validator()
   add <- function(...) checks[[length(checks) + 1]] <<- finn_tx_check(...)
 
   # Match the worker's read.csv defaults: blank text identifiers remain empty,
-  # so the package's blank-combo check sees the same values in both paths.
+  # so the package's combo normalization sees the same values in both paths.
   prepared <- NULL
   read_err <- NULL
   shape_ok <- "Date" %in% names(out) && inherits(out$Date, "Date") && target %in% names(out) && is.numeric(out[[target]])

@@ -50,8 +50,16 @@
 #'   is incomplete or contains a rejected node is not reconciled; its covered
 #'   current series follow the existing default-local forecast path. Existing
 #'   nodes are matched by identity and surviving bottom membership, not position
-#'   or node count. Reassigned generated aggregate labels are treated as new
-#'   nodes rather than inheriting another aggregate's selection. When every
+#'   or node count. Standard-hierarchy parents are named by position (A, B,
+#'   AA, ...). If an existing letter now names a different group, a
+#'   standard-hierarchy Agent version's update stops and asks for the same
+#'   parent groups or a new history with [iterate_forecast()]. A standard-hierarchy
+#'   global model in a bottoms-up Agent version instead counts its series as
+#'   failed updates: within the failure limit they receive default local
+#'   forecasts, and above it the update stops with the same explanation.
+#'   Grouped hierarchies, which name nodes by value, still
+#'   route a reassigned label as a new node rather than inheriting another
+#'   aggregate's selection. When every
 #'   predecessor source node has the same selected model or average, new inner
 #'   hierarchy source nodes inherit that uniform choice. Their component and
 #'   average forecasts must pass the same checks before publication. This keeps
@@ -349,7 +357,8 @@ update_fcst_agent_workflow <- function(agent_info,
         global_failed_combos = "{results$update_global_models$failed_combos}",
         local_failed_combos = "{results$update_local_models$failed_combos}",
         global_quality_rejected = "{results$update_global_models$quality_rejected_combos}",
-        local_quality_rejected = "{results$update_local_models$quality_rejected_combos}"
+        local_quality_rejected = "{results$update_local_models$quality_rejected_combos}",
+        global_failure_reason = "{results$update_global_models$failure_reason}"
       )
     ),
     forecast_new_combos = list(
@@ -507,6 +516,8 @@ update_fcst_agent_workflow <- function(agent_info,
       ctx$results$initial_checks <- result
       list(ctx = ctx, `next` = if (identical(result, "no updates required")) "save_best_agent_run" else "update_global_models")
     }
+  } else {
+    workflow$start$args$hierarchy_combo_variables <- project_info$combo_variables
   }
 
   # run the graph
@@ -586,50 +597,29 @@ validate_completed_run_metadata <- function(metadata, run_id) {
   TRUE
 }
 
+# Load a saved version's required final outputs when it finished. A version
+# without a recorded forecast approach cannot prove which outputs it needed and
+# counts as incomplete. Returns the named outputs, or NULL when any is missing,
+# empty or has invalid run metadata. Storage and read failures propagate.
 load_completed_agent_run_outputs <- function(agent_info) {
-  required_suffixes <- c("run_metadata", "forecast", "model_summary", "eda")
-  if (agent_info$forecast_approach != "bottoms_up") {
-    required_suffixes <- c(required_suffixes, "hierarchy_summary")
-  }
-
-  outputs <- purrr::map(
-    required_suffixes,
-    function(suffix) {
-      load_final_agent_artifact(
-        agent_info = agent_info,
-        suffix = suffix,
-        allow_missing = TRUE
-      )
-    }
-  )
-  names(outputs) <- required_suffixes
-
-  if (any(vapply(outputs, nrow, integer(1)) == 0)) {
-    return(NULL)
-  }
-
-  if (!validate_completed_run_metadata(
-    metadata = outputs$run_metadata,
-    run_id = agent_info$run_id
-  )) {
-    return(NULL)
-  }
-
-  outputs
+  status <- agent_predecessor_status(agent_info, include_outputs = TRUE)
+  if (status$complete) status$outputs else NULL
 }
 
+# Search saved version rows for completed predecessors, newest first (see
+# agent_run_search_order()), so legacy run logs sharing a version number are
+# all considered. Returns up to max_runs lists holding predecessor info, run
+# metadata and hierarchy summary. Incomplete rows are skipped; storage and
+# read failures propagate. No artifacts are written.
 find_completed_previous_agent_runs <- function(agent_info,
                                                previous_agent_runs,
                                                max_runs = 1L) {
   completed_runs <- list()
-  versions <- unique(previous_agent_runs$agent_version)
 
-  for (version in versions) {
-    version_run_tbl <- previous_agent_runs %>%
-      dplyr::filter(agent_version == version)
+  for (index in agent_run_search_order(previous_agent_runs)) {
     previous_agent_info <- build_previous_agent_info(
       agent_info = agent_info,
-      agent_run_tbl = version_run_tbl
+      agent_run_tbl = previous_agent_runs[index, , drop = FALSE]
     )
     final_outputs <- load_completed_agent_run_outputs(
       agent_info = previous_agent_info
@@ -651,6 +641,156 @@ find_completed_previous_agent_runs <- function(agent_info,
   }
 
   return(completed_runs)
+}
+
+# Final outputs that prove an Agent version finished. Hierarchical versions
+# also need their hierarchy summary. Returns suffixes in reporting order.
+agent_run_required_suffixes <- function(forecast_approach) {
+  required <- c("run_metadata", "forecast", "model_summary", "eda")
+  if (!identical(as.character(forecast_approach), "bottoms_up")) {
+    required <- c(required, "hierarchy_summary")
+  }
+  required
+}
+
+# TRUE when a saved forecast approach is a single nonblank value. NULL (absent
+# column), NA and blank values mean the version's required outputs are unknown.
+agent_forecast_approach_recorded <- function(forecast_approach) {
+  length(forecast_approach) == 1L && !is.na(forecast_approach) &&
+    nzchar(as.character(forecast_approach))
+}
+
+# Row order for predecessor searches: highest agent_version first, then latest
+# created time (when logged), each run ID once. Ties without created times keep
+# input order. Older parquet projects may hold several run logs that all say
+# version 1. Returns row indices of the given run-log table.
+agent_run_search_order <- function(agent_runs_tbl) {
+  if (!NROW(agent_runs_tbl)) {
+    return(integer())
+  }
+  versions <- as.numeric(agent_runs_tbl$agent_version)
+  index <- if ("created" %in% names(agent_runs_tbl)) {
+    order(versions, agent_runs_tbl$created, decreasing = TRUE)
+  } else {
+    order(versions, decreasing = TRUE)
+  }
+  index[!duplicated(as.character(agent_runs_tbl$run_id[index]))]
+}
+
+# Shared completion check for setup, predecessor selection and diagnostics.
+# Reads each required output once by exact path, never listing its folder;
+# missing or zero-row outputs count as lacking, and run metadata must be
+# reusable, with its identifiers kept as text. Returns complete and problem
+# phrases. include_outputs retains the already-read tables for the update
+# consumer only. Provider/read failures propagate. Nothing is written.
+agent_predecessor_status <- function(previous_agent_info, include_outputs = FALSE) {
+  approach <- previous_agent_info$forecast_approach
+  if (!agent_forecast_approach_recorded(approach)) {
+    return(list(complete = FALSE, problems = "has no recorded forecast approach"))
+  }
+
+  required <- agent_run_required_suffixes(approach)
+  info <- previous_agent_info$project_info
+  info$run_name <- previous_agent_info$run_id
+  outputs <- stats::setNames(lapply(required, function(suffix) {
+    read_exact_artifact(info, local_artifact_path(info, "final_output", paste0("-", suffix)),
+      allow_missing = TRUE, missing_value = tibble::tibble(),
+      character_columns = if (identical(suffix, "run_metadata")) {
+        c("combo", "agent_run_id", "best_run_name")
+      }
+    )
+  }), required)
+  present <- vapply(outputs, nrow, integer(1)) > 0L
+  if (!all(present)) {
+    return(list(complete = FALSE,
+      problems = paste("lacks", paste(required[!present], collapse = ", "))))
+  }
+
+  if (!validate_completed_run_metadata(outputs$run_metadata, previous_agent_info$run_id)) {
+    return(list(complete = FALSE, problems = "has invalid run_metadata"))
+  }
+  status <- list(complete = TRUE, problems = character())
+  if (include_outputs) status$outputs <- outputs
+  status
+}
+
+# Classify saved versions newest first. With stop_at_complete, checking ends at
+# the first completed version, as the update gate needs. Returns the number of
+# distinct run logs, checked statuses (version, complete, problems) and the
+# first completed predecessor's info, or NULL. Read-only.
+agent_predecessor_history <- function(agent_info, agent_runs_tbl,
+                                      stop_at_complete = FALSE) {
+  rows <- agent_run_search_order(agent_runs_tbl)
+  statuses <- list()
+  completed <- NULL
+  for (index in rows) {
+    previous_agent_info <- build_previous_agent_info(
+      agent_info = agent_info,
+      agent_run_tbl = agent_runs_tbl[index, , drop = FALSE]
+    )
+    status <- agent_predecessor_status(previous_agent_info)
+    statuses[[length(statuses) + 1L]] <- c(
+      list(version = previous_agent_info$agent_version), status
+    )
+    if (status$complete && is.null(completed)) {
+      completed <- previous_agent_info
+      if (stop_at_complete) break
+    }
+  }
+  list(versions = length(rows), statuses = statuses, completed = completed)
+}
+
+# Build an actionable error for a missing or incomplete Agent history: the
+# caller's headline, project and run-log search, version counts, up to five
+# incomplete versions with their problems, and the next step. A NULL history
+# means no previous run logs were read. Returns one message string.
+format_agent_history_error <- function(headline, project_info, history = NULL) {
+  statuses <- if (is.null(history)) list() else history$statuses
+  versions <- if (is.null(history)) 0L else history$versions
+  completed <- sum(vapply(statuses, function(status) isTRUE(status$complete), logical(1)))
+  incomplete <- Filter(function(status) !isTRUE(status$complete), statuses)
+  details <- vapply(utils::head(incomplete, 5L), function(status) {
+    paste0("v", status$version, " ", paste(status$problems, collapse = ", "))
+  }, character(1))
+  if (length(incomplete) > 5L) {
+    details <- c(details, paste("and", length(incomplete) - 5L, "more"))
+  }
+  project_path <- project_info$path %||% tempdir()
+
+  paste0(
+    headline, "\n",
+    "Project '", project_info$project_name, "': searched '", project_path,
+    "/logs' for run logs matching '", fs::path_file(agent_run_ledger_glob(project_info)), "'.\n",
+    "Found ", versions, " previous Agent version", if (versions == 1L) "" else "s",
+    "; ", completed, " completed.",
+    if (length(details)) paste0("\nIncomplete versions: ", paste(details, collapse = "; "), ".") else "",
+    "\nNext step: restore the Agent history under '", project_path,
+    "' or start a new history with iterate_forecast()."
+  )
+}
+
+# Gate a new update version on a completed predecessor before setup writes
+# anything. Every saved version is a candidate; checking stops at the newest
+# completed one with nonempty required outputs. Errors with diagnostics when
+# none is complete; otherwise reports the selected version. Returns the
+# predecessor info invisibly; nothing is written.
+require_completed_agent_predecessor <- function(project_info, llm, agent_runs_tbl) {
+  agent_info <- list(project_info = project_info, llm = llm, overwrite = TRUE)
+  history <- agent_predecessor_history(agent_info, agent_runs_tbl, stop_at_complete = TRUE)
+
+  if (is.null(history$completed)) {
+    headline <- if (history$versions == 0L) {
+      "Error in update_forecast(). No previous agent runs found."
+    } else {
+      "Error in update_forecast(). No completed previous agent run found."
+    }
+    stop(format_agent_history_error(headline, project_info, history), call. = FALSE)
+  }
+
+  versions <- history$versions
+  latest <- history$completed$agent_version
+  cli::cli_alert_info("Found {versions} Agent version{?s}; latest completed: v{latest}")
+  invisible(history$completed)
 }
 
 #' Parse one local update CSV through a single connection
@@ -1128,12 +1268,18 @@ completed_update_runs <- function(agent_info, metadata) {
 #' @return A list with `prev_best_runs_tbl` (data frame of previous best runs),
 #'   `current_run_combos` (character vector of current combo hashes), and
 #'   `new_combos` (character vector of new combo hashes), or "no updates required".
-#'   For pre-expanded hierarchy ID input, generated labels with reassigned
+#'   For pre-expanded grouped-hierarchy ID input, generated labels with reassigned
 #'   surviving bottom members count as new nodes and use default-local routing.
 #'   This reads each parent hierarchy once by exact path; invalid metadata or
-#'   access failures remain errors.
+#'   access failures remain errors. Standard-hierarchy updates stop when a
+#'   parent letter now names a different group (see
+#'   check_standard_hierarchy_parents()). Missing or incomplete Agent history errors
+#'   name the searched run logs, version counts, missing outputs per version and
+#'   the next step (restore history or start a new one with iterate_forecast()).
 #' @noRd
-initial_checks <- function(agent_info) {
+# hierarchy_combo_variables keeps the original columns before outer ID expansion,
+# so a parent with entirely replaced leaves can be checked against saved values.
+initial_checks <- function(agent_info, hierarchy_combo_variables = NULL) {
   reject_agent_custom_update(agent_info)
   # get metadata
   project_info <- agent_info$project_info
@@ -1173,16 +1319,14 @@ initial_checks <- function(agent_info) {
   # load all agent runs
   agent_runs_list <- list_files(
     project_info$storage_object,
-    paste0(
-      agent_info$project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      "*agent_run.csv"
-    )
+    agent_run_ledger_glob(agent_info$project_info)
   )
 
   if (length(agent_runs_list) <= 1) {
-    stop("Error in update_forecast(). No previous agent runs found.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in update_forecast(). No previous agent runs found.",
+      agent_info$project_info
+    ), call. = FALSE)
   }
 
   # load previous agent run results (excluding current run)
@@ -1203,11 +1347,15 @@ initial_checks <- function(agent_info) {
 
   # ensure a completed previous run was found
   if (length(completed_runs) == 0) {
-    stop("Error in update_forecast(). No completed previous agent run found. ",
-      "Please ensure at least one prior agent version finished successfully ",
-      "before calling update_forecast().",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      paste0(
+        "Error in update_forecast(). No completed previous agent run found. ",
+        "Please ensure at least one prior agent version finished successfully ",
+        "before calling update_forecast()."
+      ),
+      agent_info$project_info,
+      agent_predecessor_history(agent_info, prev_agent_run_tbl)
+    ), call. = FALSE)
   }
 
   prev_agent_info <- completed_runs[[1]]$agent_info
@@ -1245,8 +1393,12 @@ initial_checks <- function(agent_info) {
     previous_info$run_name <- prev_agent_info$run_id
     current_info <- project_info
     current_info$run_name <- agent_info$run_id
-    changed_nodes <- changed_update_hierarchy_sources(
-      read_selection_hierarchy(previous_info), read_selection_hierarchy(current_info))
+    previous_hierarchy <- read_selection_hierarchy(previous_info)
+    current_hierarchy <- read_selection_hierarchy(current_info)
+    check_standard_hierarchy_parents(previous_hierarchy, current_hierarchy,
+      prev_agent_info$agent_version, previous_info = previous_info,
+      current_info = current_info, combo_variables = hierarchy_combo_variables)
+    changed_nodes <- changed_update_hierarchy_sources(previous_hierarchy, current_hierarchy)
     new_combos <- union(new_combos,
       intersect(current_run_combos, vapply(changed_nodes, hash_data, character(1), USE.NAMES = FALSE)))
   }
@@ -1372,6 +1524,9 @@ initial_checks <- function(agent_info) {
 #' components or recovering inner hierarchical source choices from the fitted
 #' pool. Fitting failures use the existing local fallback; current-artifact
 #' access failures propagate and must not be reinterpreted as model failures.
+#' Reassigned standard-hierarchy parent letters, including from Spark's isolated
+#' R process, count as failed series; the result's `failure_reason` keeps their
+#' explanation for the failure-limit error.
 #' Active custom replay restores enrollment and propagates every failure without
 #' default fallback; its pinned group retains one global child identity. Dispatch
 #' carries only enrollment/replay references and restores both inside the worker.
@@ -1387,6 +1542,8 @@ initial_checks <- function(agent_info) {
 #'   of combo hashes that failed during the global model update), plus
 #'   `quality_rejected_combos`. A quality rejection is reported as such, never as
 #'   a finished global update; publication requires a complete accepted group.
+#'   A failed update may add `failure_reason`, the standard parent-change
+#'   explanation, or NULL for other failures.
 #' @noRd
 update_global_models <- function(agent_info,
                                  previous_best_run_tbl,
@@ -1464,20 +1621,41 @@ update_global_models <- function(agent_info,
   try(foreach::registerDoSEQ(), silent = TRUE)
 
   if (inherits(global_error, "condition")) {
-    if (inherits(global_error, "finnts_update_artifact_error")) stop(global_error)
+    artifact_error <- if (inherits(global_error, "finnts_update_artifact_error")) {
+      global_error
+    } else {
+      global_error[["parent"]]
+    }
+    if (inherits(artifact_error, "finnts_update_artifact_error")) stop(artifact_error)
+    # A standard parent change leaves no reusable global choice, so its series
+    # count as failed updates: default fallback within the failure limit, and
+    # the explanation is kept for the limit error. Spark's isolated R process
+    # wraps the original condition as its parent.
+    hierarchy_error <- if (inherits(global_error, "finnts_hierarchy_change_error")) {
+      global_error
+    } else {
+      global_error[["parent"]]
+    }
+    failure_reason <- if (inherits(hierarchy_error, "finnts_hierarchy_change_error")) {
+      hierarchy_error$explanation
+    } else {
+      NULL
+    }
     if (!is.null(agent_info$custom_agent_contract) &&
       !inherits(global_error, c("finnts_update_model_error", "finnts_forecast_selection_rejected"))) stop(global_error)
     # extract individual combos that were covered by the global model
     failed_global_combos <- unique(previous_best_run_global_tbl$combo)
     failed_hashes <- vapply(failed_global_combos, hash_data, character(1), USE.NAMES = FALSE)
+    failure_message <- failure_reason %||% conditionMessage(global_error)
     cli::cli_alert_warning(
-      "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {conditionMessage(global_error)}"
+      "Global model update failed ({length(failed_global_combos)} combo{?s} affected). Error: {failure_message}"
     )
     cli::cli_alert_info("Failed combos will be re-forecast using default local model inputs.")
     if (inherits(global_error, "finnts_forecast_selection_rejected")) {
       return(list(status = "Global forecast quality rejected", failed_combos = character(), quality_rejected_combos = failed_hashes))
     }
-    return(list(status = "Global model update failed", failed_combos = failed_hashes, quality_rejected_combos = character()))
+    return(list(status = "Global model update failed", failed_combos = failed_hashes,
+      quality_rejected_combos = character(), failure_reason = failure_reason))
   }
 
   rejected <- if (is.list(global_error)) global_error$quality_rejected_combos %||% character() else character()
@@ -1662,6 +1840,13 @@ update_local_models <- function(agent_info,
 #'   during global model update.
 #' @param local_failed_combos Character vector of combo hashes that failed
 #'   during local model update.
+#' @param global_quality_rejected Character vector of global combo hashes whose
+#'   updated forecasts failed quality checks; they do not count toward the limit.
+#' @param local_quality_rejected Character vector of local combo hashes whose
+#'   updated forecasts failed quality checks; they do not count toward the limit.
+#' @param global_failure_reason Optional explanation of why the global update
+#'   failed, such as a standard-hierarchy parent change. It is appended to the
+#'   limit error so the cause is visible; it never changes the limit.
 #'
 #' @return A character vector of all failed combo hashes that should be
 #'   re-forecast using default local model inputs.
@@ -1672,7 +1857,8 @@ check_update_failures <- function(agent_info,
                                   global_failed_combos,
                                   local_failed_combos,
                                   global_quality_rejected = character(),
-                                  local_quality_rejected = character()) {
+                                  local_quality_rejected = character(),
+                                  global_failure_reason = NULL) {
   failed_combos <- intersect(
     unique(c(global_failed_combos, local_failed_combos)),
     current_run_combos
@@ -1699,6 +1885,8 @@ check_update_failures <- function(agent_info,
       " existing series, floor of 10). Failed series: ",
       paste(resolved_names, collapse = ", "),
       ". Please use iterate_forecast() instead to retrain all models from scratch.",
+      if (length(global_failure_reason) == 1L && !is.na(global_failure_reason) &&
+        nzchar(global_failure_reason)) paste0("\n", global_failure_reason),
       call. = FALSE
     )
   }
@@ -1716,7 +1904,8 @@ check_update_failures <- function(agent_info,
 #'
 #' This function analyzes the results of the agent run by comparing the latest best runs with previous best runs.
 #' Agent-log run IDs remain character while versions and accuracy retain numeric
-#' types. Missing completed predecessors and storage/read failures remain errors.
+#' types. Missing completed predecessors and storage/read failures remain errors;
+#' missing-history errors include the same run-log diagnostics as initial_checks().
 #' When every current custom-enrolled series is new, report the absent comparison
 #' explicitly and return NA rather than fabricate an accuracy percentage. Ordinary
 #' runs retain their absent-common-series error. No artifacts are written here.
@@ -1733,16 +1922,14 @@ analyze_results <- function(agent_info) {
   # load all agent runs
   agent_runs_list <- list_files(
     project_info$storage_object,
-    paste0(
-      agent_info$project_info$path, "/logs/*", hash_data(project_info$project_name), "-",
-      "*agent_run.csv"
-    )
+    agent_run_ledger_glob(agent_info$project_info)
   )
 
   if (length(agent_runs_list) <= 1) {
-    stop("Error in update_forecast(). No previous agent runs found.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in update_forecast(). No previous agent runs found.",
+      agent_info$project_info
+    ), call. = FALSE)
   }
 
   # load previous agent run results (excluding current run)
@@ -1763,9 +1950,11 @@ analyze_results <- function(agent_info) {
 
   # ensure at least one completed previous run was found
   if (length(completed_runs) == 0) {
-    stop("Error in analyze_results(). No completed previous agent runs found to compare against.",
-      call. = FALSE
-    )
+    stop(format_agent_history_error(
+      "Error in analyze_results(). No completed previous agent runs found to compare against.",
+      agent_info$project_info,
+      agent_predecessor_history(agent_info, prev_agent_run_tbl)
+    ), call. = FALSE)
   }
 
   previous_best_run_tbl <- completed_runs %>%
@@ -2626,8 +2815,13 @@ update_forecast_combo <- function(agent_info,
 
   selection_cache <- new.env(parent = emptyenv())
   if (!is.null(selected_models$hierarchy)) {
-    selected_models <- extend_global_update_selection(selected_models,
-      read_selection_hierarchy(new_run_info, selection_cache))
+    current_hierarchy <- read_selection_hierarchy(new_run_info, selection_cache)
+    # Saved choices are matched by node name; stop before fitting when standard
+    # parent letters now name different groups.
+    check_standard_hierarchy_parents(selected_models$hierarchy, current_hierarchy,
+      previous_info = prev_run_info, current_info = new_run_info,
+      combo_variables = adjust_inputs(prev_run_log_tbl$combo_variables))
+    selected_models <- extend_global_update_selection(selected_models, current_hierarchy)
   }
 
   if (isTRUE(prev_run_log_tbl$box_cox) || isTRUE(prev_run_log_tbl$stationary)) {

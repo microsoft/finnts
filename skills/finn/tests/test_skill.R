@@ -784,7 +784,8 @@ local({
     "Region,Date,Value", "001,2024-01-01,10", ",2024-02-01,11", "1,2024-03-01,"
   ))
   gate_data <- NULL
-  # Mirror the package's R6 blank predicate and capture the exact validator input.
+  # A validator that rejects blank identifiers stands in for any failed input rule
+  # (finnts itself treats blanks as missing) and captures the exact validator input.
   validator <- function(input_data, ...) {
     gate_data <<- input_data
     failed <- any(!is.na(input_data$Region) & trimws(input_data$Region) == "")
@@ -799,7 +800,7 @@ local({
     identical(gate_data$Region, c("001", "", "1")) && identical(gate_data$Region, worker_data$Region) &&
       identical(gate_data$Date, worker_data$Date) && identical(gate_data$Value, worker_data$Value) &&
       is.na(gate_data$Value[3]))
-  check("transform: a blank identifier fails verification without an approval token",
+  check("transform: a failed input rule blocks verification without an approval token",
     !isTRUE(result$gate$passed) && is.null(result$token) && identical(tx_status(result)[["R6"]], "fail"))
 })
 
@@ -1404,6 +1405,8 @@ with(dx, {
     "there is no package called 'glmnet'" = "missing_package",
     "Inputs have recently changed for this agent" = "agent_inputs_changed",
     "No previous agent runs found for this project" = "update_needs_agent",
+    "Error in update_forecast(). The standard hierarchy's parent groups changed since Agent version 3, so this update cannot reuse their history." = "hierarchy_parents_changed",
+    "Error in update_forecast(). 12 time series failed to update, which exceeds the limit of 10.\nThe standard hierarchy's parent groups changed since the previous Agent version, so this update cannot reuse their history." = "hierarchy_parents_changed",
     "Previous agent run included global models" = "update_model_mix",
     "HTTP 401 Unauthorized" = "llm_access",
     "No Copilot authentication is available. Set COPILOT_GITHUB_TOKEN" = "llm_access",
@@ -1424,6 +1427,12 @@ with(dx, {
       !grepl("resumes reread", config_fix, fixed = TRUE))
   check("diagnose: temporary file lock still recommends resume",
     any(grepl("then resume", diagnose_match("Permission denied")$fix, fixed = TRUE)))
+  parent_fix <- paste(diagnose_match("The standard hierarchy's parent groups changed")$fix, collapse = " ")
+  check("diagnose: parent-group changes offer a fresh update after restoring groups or a confirmed new Agent history",
+    grepl("restore the previous parent groups", parent_fix, fixed = TRUE) &&
+      grepl("--mode=update --new=true --confirm=true", parent_fix, fixed = TRUE) &&
+      grepl("--mode=iterate --new=true --confirm=true", parent_fix, fixed = TRUE) &&
+      isFALSE(diagnose_match("The standard hierarchy's parent groups changed")$resume))
   check("diagnose: no match returns NULL", is.null(diagnose_match("all good")) && is.null(diagnose_match("")))
   check("diagnose: every pattern is a valid regex", all(vapply(diagnose_patterns(), function(p) {
     !inherits(try(grepl(p$pattern, "x", perl = TRUE), silent = TRUE), "try-error") && length(p$fix) > 0
@@ -3430,6 +3439,16 @@ with(dx, {
   empty <- diagnose_run(list(), ep)
   efile <- diagnose_write_report(empty, ep)
   check("report: works for a project with no runs", file.exists(efile) && any(grepl("no_runs", readLines(efile, warn = FALSE))))
+
+  finn_update_state(finn_run_paths(lp, "r2"), run_id = "r2", mode = "update", status = "failed",
+    error = "Error in update_forecast(). The standard hierarchy's parent groups changed since Agent version 2.",
+    created_at = finn_now())
+  parent_res <- diagnose_run(list(run_id = "r2"), lp)
+  parent_steps <- paste(unlist(parent_res$next_actions), collapse = " ")
+  check("diagnose: parent-group changes start a fresh update instead of resuming the failed one",
+    identical(parent_res$data$category, "hierarchy_parents_changed") &&
+      grepl("--mode=update --new=true --confirm=true", parent_steps, fixed = TRUE) &&
+      !grepl("After fixing, resume", parent_steps, fixed = TRUE))
 })
 
 check("issue template exists", file.exists(file.path(skill_dir, "..", "..", ".github", "ISSUE_TEMPLATE", "finn-skill.yml")))

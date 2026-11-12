@@ -1296,7 +1296,19 @@ requires the current hierarchy. Removed bottom series and orphaned aggregates
 are excluded; input ordering or an unchanged node count does not establish
 identity. Generated HTS aggregate labels can be reassigned when membership or
 hierarchy ordering changes. Finn compares their membership on surviving bottom
-series: a reassigned label is treated as a new node, not as the old aggregate.
+series. Standard-hierarchy parents are named by position (A, B, AA, ...). If an
+existing letter now names a different group, a standard-hierarchy Agent
+version's update stops and asks for the same parent groups or a new history with
+`iterate_forecast()`. A standard-hierarchy global model in a bottoms-up Agent
+version instead counts its series as failed updates: within the failure limit
+they receive default local forecasts, and above it the update stops with the
+same explanation. Grouped hierarchies, which name nodes by value, still route a
+reassigned label as a new node, not as the old aggregate.
+Replacing all bottom series within the same standard parent does not by itself
+change that parent's identity. Whenever the bottom series change, Finn compares
+each parent's original values and ancestor columns in the existing saved
+hierarchy inputs. This also catches added or removed series that reorder the
+hierarchy levels; missing or inconsistent saved inputs remain errors.
 Added or reintroduced nodes have no selection in the immediate
 predecessor and follow the default-local workflow. Their saved local result is
 the predecessor for the next update. This includes first/last group members and

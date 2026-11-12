@@ -123,8 +123,6 @@ test_that("invalid detector inputs fail explicitly", {
   }
   expect_error(detect_hierarchy(data, "missing"), "Missing combo columns")
   expect_error(detect_hierarchy(data[0, ], c("A", "B")), "No retained")
-  expect_error(detect_hierarchy(transform(data, A = c(" ", "a")), "A"), "Blank or nonfinite")
-  expect_error(detect_hierarchy(transform(data, A = c(" ", NA)), "A"), "Blank or nonfinite")
   expect_error(detect_hierarchy(data.frame(A = c(1, Inf)), "A"), "nonfinite")
   expect_error(detect_hierarchy(data.frame(A = I(list("a", "b"))), "A"), "Unsupported")
   matrix_column <- data
@@ -164,6 +162,21 @@ test_that("missing combo labels form the engine's NA label", {
   expect_error(detect_hierarchy(data.frame(A = c(NA, "NA"), B = "x"), c("A", "B")),
     "same '--'-joined", fixed = TRUE)
   expect_error(detect_hierarchy(data.frame(A = c(1, -Inf, NA)), "A"), "nonfinite")
+})
+
+test_that("blank combo labels are missing values that form the NA label", {
+  crossed <- data.frame(Leader = c("A", "A", " ", ""), Product = c("X", "Y", "X", "Y"))
+  result <- detect_hierarchy(crossed, c("Leader", "Product"))
+  expect_identical(result$forecast_approach, "grouped_hierarchy")
+  expect_equal(result$total_ts, 4L)
+  expect_equal(result$counts[["Leader"]], 2L)
+
+  nested <- data.frame(Region = c("North", "North", "  "), Site = c("A", "B", "C"))
+  expect_identical(detect_hierarchy(nested, c("Region", "Site"))$forecast_approach, "standard_hierarchy")
+
+  mixed <- data.frame(A = c("", "NA", "North", "North"), B = c("X", "Y", "X", "Y"))
+  expect_error(detect_hierarchy(mixed, c("A", "B")),
+    "Combo column 'A' contains both missing values and the text \"NA\"", fixed = TRUE)
 })
 
 test_that("numeric NaN combo labels act as missing values unless mixed with NA", {

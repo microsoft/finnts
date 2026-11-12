@@ -1135,21 +1135,198 @@ changed_update_hierarchy_sources <- function(previous, current) {
   shared_sources <- intersect(previous$hts_combos, current$hts_combos)
   if (!length(shared_bottoms)) return(current$hts_combos)
   if (!length(shared_sources)) return(character())
-  # Label each summing matrix with the saved source and original bottom IDs.
   membership <- function(hierarchy) {
-    if (is.null(hierarchy$nodes)) stop("Update hierarchy is missing its node structure.", call. = FALSE)
-    bottom <- matrix(1, nrow = 2, ncol = length(hierarchy$original_combos),
-      dimnames = list(NULL, hierarchy$original_combos))
-    structure <- get_hts(stats::ts(bottom), hierarchy$nodes,
-      if (is.matrix(hierarchy$nodes)) "grouped_hierarchy" else "standard_hierarchy")
-    summed <- hts::smatrix(structure)
-    if (nrow(summed) != length(hierarchy$hts_combos)) {
-      stop("Update hierarchy source identities do not match its node structure.", call. = FALSE)
-    }
-    dimnames(summed) <- list(hierarchy$hts_combos, hierarchy$original_combos)
-    summed[shared_sources, shared_bottoms, drop = FALSE] != 0
+    hierarchy_membership(hierarchy)[shared_sources, shared_bottoms, drop = FALSE]
   }
   shared_sources[rowSums(membership(previous) != membership(current)) > 0]
+}
+
+# Map each saved hierarchy node to the bottom series it sums. Rows are the saved
+# hts_combos and columns the original bottom combos, both in saved order. The
+# summing matrix comes from the saved node structure; missing or mismatched
+# structure is an error, never an implied match. Returns a logical matrix; no I/O.
+hierarchy_membership <- function(hierarchy) {
+  if (is.null(hierarchy$nodes)) stop("Update hierarchy is missing its node structure.", call. = FALSE)
+  bottom <- matrix(1, nrow = 2, ncol = length(hierarchy$original_combos),
+    dimnames = list(NULL, hierarchy$original_combos))
+  structure <- get_hts(stats::ts(bottom), hierarchy$nodes,
+    if (is.matrix(hierarchy$nodes)) "grouped_hierarchy" else "standard_hierarchy")
+  summed <- hts::smatrix(structure)
+  if (nrow(summed) != length(hierarchy$hts_combos)) {
+    stop("Update hierarchy source identities do not match its node structure.", call. = FALSE)
+  }
+  dimnames(summed) <- list(hierarchy$hts_combos, hierarchy$original_combos)
+  summed != 0
+}
+
+# TRUE for saved standard-hierarchy metadata, whose node structure is a list of
+# per-level child counts. Grouped metadata stores a group matrix; legacy
+# metadata without nodes is neither and keeps its existing handling.
+is_standard_hierarchy <- function(hierarchy) {
+  is.list(hierarchy) && is.list(hierarchy$nodes) && !is.matrix(hierarchy$nodes)
+}
+
+# Standard-hierarchy parent nodes mapped to their member bottom series. Parents
+# are named by position (A, B, AA, ...). The summing matrix lists Total first
+# and one row per bottom series last; both are excluded. Returns a named list.
+standard_hierarchy_parents <- function(hierarchy) {
+  membership <- hierarchy_membership(hierarchy)
+  parents <- seq_len(nrow(membership) - ncol(membership))[-1]
+  stats::setNames(
+    lapply(parents, function(row) colnames(membership)[membership[row, ]]),
+    rownames(membership)[parents]
+  )
+}
+
+# Recover exact parent values from a run's existing bottom-input artifact.
+# combo_variables are the original columns, not expanded ID names. Ordering by
+# distinct count matches standard hierarchy construction, with supplied-order
+# ties. Returns one identity hash per parent, including its ancestor columns,
+# with a "groups" attribute of readable column/value labels for error messages.
+# CSV labels stay text; inconsistent data or storage failures are errors.
+# Reads one deterministic hts_data artifact without listings or writes.
+standard_hierarchy_parent_keys <- function(hierarchy, run_info, combo_variables) {
+  data <- tryCatch(
+    read_exact_artifact(run_info,
+      local_artifact_path(run_info, "prep_data", "-hts_data"),
+      character_columns = c("Combo", combo_variables)),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read saved hierarchy parent identities: ", conditionMessage(error)),
+        class = "finnts_update_artifact_error", parent = error)
+    }
+  )
+  if (!is.data.frame(data) ||
+      !all(c("Combo", combo_variables) %in% names(data))) {
+    rlang::abort("Saved hierarchy input is missing its original combo columns.",
+      class = "finnts_update_artifact_error")
+  }
+  data <- unique(data[, c("Combo", combo_variables), drop = FALSE])
+  if (anyDuplicated(data$Combo) ||
+      !setequal(data$Combo, hierarchy$original_combos)) {
+    rlang::abort("Saved hierarchy input does not match its original series mapping.",
+      class = "finnts_update_artifact_error")
+  }
+  counts <- vapply(data[, combo_variables, drop = FALSE], dplyr::n_distinct, integer(1))
+  variables <- combo_variables[order(counts, seq_along(counts))]
+  parents <- standard_hierarchy_parents(hierarchy)
+  levels <- rep(seq_len(length(hierarchy$nodes) - 1L),
+    times = vapply(utils::head(hierarchy$nodes, -1L), sum, numeric(1)))
+  if (length(variables) != length(hierarchy$nodes) ||
+      length(levels) != length(parents)) {
+    rlang::abort("Saved hierarchy input does not match its parent levels.",
+      class = "finnts_update_artifact_error")
+  }
+  values <- lapply(seq_along(parents), function(index) {
+    columns <- variables[seq_len(levels[index])]
+    values <- unique(data[match(parents[[index]], data$Combo), columns, drop = FALSE])
+    if (nrow(values) != 1L) {
+      rlang::abort(paste0("Saved hierarchy input assigns multiple groups to parent '",
+        names(parents)[index], "'."), class = "finnts_update_artifact_error")
+    }
+    lapply(values, as.character)
+  })
+  keys <- stats::setNames(vapply(values, hash_data, character(1)), names(parents))
+  attr(keys, "groups") <- stats::setNames(vapply(values, function(group) {
+    paste(names(group), unlist(group, use.names = FALSE), collapse = ", ")
+  }, character(1)), names(parents))
+  keys
+}
+
+# Standard parent letters present in both versions that now name a different
+# group: their surviving member series differ, or the versions share no member
+# series, so membership alone cannot confirm the group. Membership also cannot
+# see levels reordered by added or removed series; the caller resolves both
+# with the original saved parent values when they are available. Parents
+# only in one version (added or removed after the existing letters) are not
+# reassignments. Returns letters in current order; grouped or legacy metadata
+# without a standard node list returns none. No I/O.
+standard_hierarchy_reassigned_parents <- function(previous, current) {
+  if (identical(previous, current) ||
+    !is_standard_hierarchy(previous) || !is_standard_hierarchy(current)) {
+    return(character())
+  }
+  before <- standard_hierarchy_parents(previous)
+  after <- standard_hierarchy_parents(current)
+  shared_bottoms <- intersect(previous$original_combos, current$original_combos)
+  labels <- intersect(names(after), names(before))
+  changed <- vapply(labels, function(label) {
+    old <- before[[label]]
+    new <- after[[label]]
+    !setequal(intersect(old, shared_bottoms), intersect(new, shared_bottoms)) ||
+      !length(intersect(old, new))
+  }, logical(1))
+  labels[changed]
+}
+
+# Stop an update when standard-hierarchy parent letters were reassigned between
+# versions, because nodes are matched by letter and would reuse another group's
+# history or saved choice. previous_version names the predecessor Agent version
+# when known. Raises finnts_hierarchy_change_error listing up to five letters
+# with example series; its explanation field holds the message without the
+# update_forecast() prefix for reuse in failure-limit errors. Returns invisibly
+# when nothing changed.
+# Optional previous_info/current_info plus original combo_variables compare
+# every shared parent letter by its original column values from the existing
+# hts_data files whenever the bottom series changed: membership alone cannot
+# confirm fully replaced groups or see levels reordered by changed distinct
+# counts. Unchanged series cannot reorder levels and read nothing. Missing or
+# inconsistent saved inputs remain errors; identities stay in memory only.
+check_standard_hierarchy_parents <- function(previous, current, previous_version = NULL,
+                                              previous_info = NULL, current_info = NULL,
+                                              combo_variables = NULL) {
+  if (identical(previous, current) ||
+    !is_standard_hierarchy(previous) || !is_standard_hierarchy(current)) {
+    return(invisible(NULL))
+  }
+
+  before <- standard_hierarchy_parents(previous)
+  after <- standard_hierarchy_parents(current)
+  groups <- NULL
+  if (length(combo_variables) && !is.null(previous_info) && !is.null(current_info) &&
+      !setequal(previous$original_combos, current$original_combos)) {
+    old_keys <- standard_hierarchy_parent_keys(previous, previous_info, combo_variables)
+    new_keys <- standard_hierarchy_parent_keys(current, current_info, combo_variables)
+    labels <- intersect(names(after), names(before))
+    reassigned <- labels[old_keys[labels] != new_keys[labels]]
+    groups <- list(before = attr(old_keys, "groups"), after = attr(new_keys, "groups"))
+  } else {
+    reassigned <- standard_hierarchy_reassigned_parents(previous, current)
+  }
+  if (!length(reassigned)) {
+    return(invisible(NULL))
+  }
+
+  series <- function(members, label, labels) {
+    paste0(
+      paste(utils::head(members, 3L), collapse = ", "),
+      if (length(members) > 3L) paste0(" and ", length(members) - 3L, " more") else "",
+      if (is.null(labels)) "" else paste0(" (", labels[[label]], ")")
+    )
+  }
+  details <- vapply(utils::head(reassigned, 5L), function(label) {
+    paste0("- '", label, "' was ", series(before[[label]], label, groups$before),
+      "; now ", series(after[[label]], label, groups$after))
+  }, character(1))
+  if (length(reassigned) > 5L) {
+    details <- c(details, paste0("- and ", length(reassigned) - 5L, " more parent nodes"))
+  }
+  since <- if (is.null(previous_version)) {
+    "the previous Agent version"
+  } else {
+    paste("Agent version", previous_version)
+  }
+
+  explanation <- paste0(
+    "The standard hierarchy's parent groups changed since ",
+    since, ", so this update cannot reuse their history.\n",
+    "Standard hierarchies name parent nodes by position (A, B, AA, ...), so adding, ",
+    "removing or reordering parent groups can give an existing name to a different group:\n",
+    paste(details, collapse = "\n"), "\n",
+    "Adding groups that sort after existing ones, or changing series within a group, is allowed.\n",
+    "Keep the same parent groups as ", since, ", or start a new history with iterate_forecast()."
+  )
+  rlang::abort(paste0("Error in update_forecast(). ", explanation),
+    class = "finnts_hierarchy_change_error", explanation = explanation)
 }
 
 # Recover one hierarchical update source from its already refitted global pool.
