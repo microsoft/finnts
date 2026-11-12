@@ -516,6 +516,8 @@ update_fcst_agent_workflow <- function(agent_info,
       ctx$results$initial_checks <- result
       list(ctx = ctx, `next` = if (identical(result, "no updates required")) "save_best_agent_run" else "update_global_models")
     }
+  } else {
+    workflow$start$args$hierarchy_combo_variables <- project_info$combo_variables
   }
 
   # run the graph
@@ -600,35 +602,8 @@ validate_completed_run_metadata <- function(metadata, run_id) {
 # counts as incomplete. Returns the named outputs, or NULL when any is missing,
 # empty or has invalid run metadata. Storage and read failures propagate.
 load_completed_agent_run_outputs <- function(agent_info) {
-  if (!agent_forecast_approach_recorded(agent_info$forecast_approach)) {
-    return(NULL)
-  }
-  required_suffixes <- agent_run_required_suffixes(agent_info$forecast_approach)
-
-  outputs <- purrr::map(
-    required_suffixes,
-    function(suffix) {
-      load_final_agent_artifact(
-        agent_info = agent_info,
-        suffix = suffix,
-        allow_missing = TRUE
-      )
-    }
-  )
-  names(outputs) <- required_suffixes
-
-  if (any(vapply(outputs, nrow, integer(1)) == 0)) {
-    return(NULL)
-  }
-
-  if (!validate_completed_run_metadata(
-    metadata = outputs$run_metadata,
-    run_id = agent_info$run_id
-  )) {
-    return(NULL)
-  }
-
-  outputs
+  status <- agent_predecessor_status(agent_info, include_outputs = TRUE)
+  if (status$complete) status$outputs else NULL
 }
 
 # Search saved version rows for completed predecessors, newest first (see
@@ -702,39 +677,33 @@ agent_run_search_order <- function(agent_runs_tbl) {
   index[!duplicated(as.character(agent_runs_tbl$run_id[index]))]
 }
 
-# Completion check for diagnostics and the update gate. Required outputs other
-# than run metadata are only probed by exact path, so a predecessor's forecast
-# is never read here; run metadata is read only when every output exists.
-# Returns complete (logical) and problems (phrases such as "lacks forecast").
-# Empty run metadata counts as lacking. Provider/read failures propagate.
-agent_predecessor_status <- function(previous_agent_info) {
+# Shared completion check for setup, predecessor selection and diagnostics.
+# Reads each required output once; missing or zero-row outputs count as lacking,
+# and run metadata must be reusable. Returns complete and problem phrases.
+# include_outputs retains the already-read tables for the update consumer only.
+# Provider/read failures propagate. Nothing is written.
+agent_predecessor_status <- function(previous_agent_info, include_outputs = FALSE) {
   approach <- previous_agent_info$forecast_approach
   if (!agent_forecast_approach_recorded(approach)) {
     return(list(complete = FALSE, problems = "has no recorded forecast approach"))
   }
 
-  project_info <- previous_agent_info$project_info
   required <- agent_run_required_suffixes(approach)
-  # Same path as load_final_agent_artifact().
-  present <- vapply(required, function(suffix) {
-    final_agent_artifact_exists(project_info, paste0(
-      "/final_output/", hash_data(project_info$project_name), "-",
-      hash_data(previous_agent_info$run_id), "-", suffix, ".", project_info$data_output
-    ))
-  }, logical(1))
+  outputs <- stats::setNames(lapply(required, function(suffix) {
+    load_final_agent_artifact(previous_agent_info, suffix, allow_missing = TRUE)
+  }), required)
+  present <- vapply(outputs, nrow, integer(1)) > 0L
   if (!all(present)) {
     return(list(complete = FALSE,
       problems = paste("lacks", paste(required[!present], collapse = ", "))))
   }
 
-  metadata <- load_final_agent_artifact(previous_agent_info, "run_metadata")
-  if (!nrow(metadata)) {
-    return(list(complete = FALSE, problems = "lacks run_metadata"))
-  }
-  if (!validate_completed_run_metadata(metadata, previous_agent_info$run_id)) {
+  if (!validate_completed_run_metadata(outputs$run_metadata, previous_agent_info$run_id)) {
     return(list(complete = FALSE, problems = "has invalid run_metadata"))
   }
-  list(complete = TRUE, problems = character())
+  status <- list(complete = TRUE, problems = character())
+  if (include_outputs) status$outputs <- outputs
+  status
 }
 
 # Classify saved versions newest first. With stop_at_complete, checking ends at
@@ -794,7 +763,7 @@ format_agent_history_error <- function(headline, project_info, history = NULL) {
 
 # Gate a new update version on a completed predecessor before setup writes
 # anything. Every saved version is a candidate; checking stops at the newest
-# completed one and reads only its run metadata. Errors with diagnostics when
+# completed one with nonempty required outputs. Errors with diagnostics when
 # none is complete; otherwise reports the selected version. Returns the
 # predecessor info invisibly; nothing is written.
 require_completed_agent_predecessor <- function(project_info, llm, agent_runs_tbl) {
@@ -1300,7 +1269,9 @@ completed_update_runs <- function(agent_info, metadata) {
 #'   name the searched run logs, version counts, missing outputs per version and
 #'   the next step (restore history or start a new one with iterate_forecast()).
 #' @noRd
-initial_checks <- function(agent_info) {
+# hierarchy_combo_variables keeps the original columns before outer ID expansion,
+# so a parent with entirely replaced leaves can be checked against saved values.
+initial_checks <- function(agent_info, hierarchy_combo_variables = NULL) {
   reject_agent_custom_update(agent_info)
   # get metadata
   project_info <- agent_info$project_info
@@ -1417,7 +1388,8 @@ initial_checks <- function(agent_info) {
     previous_hierarchy <- read_selection_hierarchy(previous_info)
     current_hierarchy <- read_selection_hierarchy(current_info)
     check_standard_hierarchy_parents(previous_hierarchy, current_hierarchy,
-      prev_agent_info$agent_version)
+      prev_agent_info$agent_version, previous_info = previous_info,
+      current_info = current_info, combo_variables = hierarchy_combo_variables)
     changed_nodes <- changed_update_hierarchy_sources(previous_hierarchy, current_hierarchy)
     new_combos <- union(new_combos,
       intersect(current_run_combos, vapply(changed_nodes, hash_data, character(1), USE.NAMES = FALSE)))
@@ -2833,7 +2805,9 @@ update_forecast_combo <- function(agent_info,
     current_hierarchy <- read_selection_hierarchy(new_run_info, selection_cache)
     # Saved choices are matched by node name; stop before fitting when standard
     # parent letters now name different groups.
-    check_standard_hierarchy_parents(selected_models$hierarchy, current_hierarchy)
+    check_standard_hierarchy_parents(selected_models$hierarchy, current_hierarchy,
+      previous_info = prev_run_info, current_info = new_run_info,
+      combo_variables = adjust_inputs(prev_run_log_tbl$combo_variables))
     selected_models <- extend_global_update_selection(selected_models, current_hierarchy)
   }
 

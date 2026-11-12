@@ -675,6 +675,7 @@ agent_custom_update_context <- function(agent_info, combos, seed) {
 # must be compatible; exact predecessor and current identities remain pinned.
 # Current series may change within the established new-series limit. A missing
 # completed predecessor errors with the shared run-log diagnostics and next step.
+# Run and request identifiers retain exact CSV text when adding the parent marker.
 # One record and parent marker are written before child execution. This is
 # immutable reentry checking, not a transaction.
 prepare_agent_custom_update <- function(agent_info, seed) {
@@ -682,7 +683,7 @@ prepare_agent_custom_update <- function(agent_info, seed) {
   if (!isTRUE(agent_info$overwrite)) stop("Custom Agent updates require overwrite = TRUE.", call. = FALSE)
   info <- agent_custom_parent_info(agent_info)
   log <- read_exact_artifact(info, local_artifact_path(info, "logs", "-agent_run", extension = "csv"),
-    character_columns = c("run_id", "custom_agent_contract_id", "custom_agent_update_id"))
+    character_columns = c("run_id", "request_id", "custom_agent_contract_id", "custom_agent_update_id"))
   marker <- log[["custom_agent_update_id"]]
   marked <- length(marker) == 1L && !is.na(marker) && nzchar(marker)
   record <- read_agent_custom_update(agent_info, marked)

@@ -89,7 +89,36 @@ test_that("updates with only incomplete versions fail before writing", {
   expect_identical(project_file_hashes(path), before)
 })
 
-test_that("updates use the newest completed version and read only its metadata", {
+for (format in c("csv", "parquet")) {
+  test_that(paste("empty required", format, "outputs cannot authorize a new update"), {
+    if (format == "parquet") skip_if_not_installed("arrow")
+    for (suffix in c("run_metadata", "forecast", "model_summary", "eda")) {
+      path <- withr::local_tempdir()
+      args <- gate_setup_args(path)
+      args$project_info$data_output <- format
+      local_gate_clock()
+      first <- gate_request(args, "iterate-1", "iterate_forecast")
+      write_completed_outputs(args, first)
+      info <- args$project_info
+      info$run_name <- first$run_id
+      write_data(data.frame(Combo = character()), NULL, info, "data",
+        "final_output", paste0("-", suffix))
+      before <- project_file_hashes(path)
+
+      status <- agent_predecessor_status(first)
+      expect_false(status$complete, info = suffix)
+      expect_match(paste(status$problems, collapse = "; "), paste("lacks", suffix), fixed = TRUE)
+      expect_null(load_completed_agent_run_outputs(first))
+      message <- error_message(gate_request(args, "update-1", "update_forecast"))
+      expect_match(message, "No completed previous agent run found", fixed = TRUE)
+      expect_match(message, "Found 1 previous Agent version; 0 completed", fixed = TRUE)
+      expect_match(message, paste("v1 lacks", suffix), fixed = TRUE)
+      expect_identical(project_file_hashes(path), before)
+    }
+  })
+}
+
+test_that("updates use the newest completed version and read each required output once", {
   path <- withr::local_tempdir()
   args <- gate_setup_args(path)
   local_gate_clock()
@@ -109,12 +138,40 @@ test_that("updates use the newest completed version and read only its metadata",
     "Found 2 Agent versions; latest completed: v1"
   )
   expect_equal(agent$agent_version, 3)
-  expect_false(any(grepl("-forecast\\.", final_reads)))
+  expect_length(final_reads, 4L)
+  expect_true(all(table(final_reads) == 1L))
+  expect_true(any(grepl(paste0(hash_data(first$run_id), "-forecast\\."), final_reads)))
   expect_true(any(grepl(paste0(hash_data(first$run_id), "-run_metadata\\."), final_reads)))
   previous <- load_agent_runs(args$project_info)
   previous <- previous[previous$agent_version < agent$agent_version, , drop = FALSE]
   completed <- find_completed_previous_agent_runs(agent, previous)
   expect_identical(completed[[1]]$agent_info$run_id, first$run_id)
+})
+
+test_that("an empty hierarchy summary cannot authorize a hierarchical predecessor", {
+  path <- withr::local_tempdir()
+  args <- gate_setup_args(path)
+  local_gate_clock()
+  first <- gate_request(args, "iterate-1", "iterate_forecast")
+  write_completed_outputs(args, first)
+  info <- args$project_info
+  info$run_name <- first$run_id
+  log <- read_exact_artifact(info,
+    local_artifact_path(info, "logs", "-agent_run", extension = "csv"),
+    character_columns = c("run_id", "request_id"))
+  log$forecast_approach <- "standard_hierarchy"
+  write_data(log, NULL, info, "log", "logs", "-agent_run")
+  write_data(data.frame(Hierarchy_Combo = character()), NULL, info, "data",
+    "final_output", "-hierarchy_summary")
+  first$forecast_approach <- "standard_hierarchy"
+  before <- project_file_hashes(path)
+
+  expect_false(agent_predecessor_status(first)$complete)
+  expect_null(load_completed_agent_run_outputs(first))
+  message <- error_message(gate_request(args, "update-1", "update_forecast"))
+  expect_match(message, "v1 lacks hierarchy_summary", fixed = TRUE)
+  expect_match(message, "Found 1 previous Agent version; 0 completed", fixed = TRUE)
+  expect_identical(project_file_hashes(path), before)
 })
 
 test_that("same-request retries resume an interrupted update without the gate", {

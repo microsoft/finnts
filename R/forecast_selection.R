@@ -1178,10 +1178,59 @@ standard_hierarchy_parents <- function(hierarchy) {
   )
 }
 
+# Recover exact parent values from a run's existing bottom-input artifact.
+# combo_variables are the original columns, not expanded ID names. Ordering by
+# distinct count matches standard hierarchy construction, with supplied-order
+# ties. Returns one identity hash per parent, including its ancestor columns.
+# CSV labels stay text; inconsistent data or storage failures are errors.
+# Reads one deterministic hts_data artifact without listings or writes.
+standard_hierarchy_parent_keys <- function(hierarchy, run_info, combo_variables) {
+  data <- tryCatch(
+    read_exact_artifact(run_info,
+      local_artifact_path(run_info, "prep_data", "-hts_data"),
+      character_columns = c("Combo", combo_variables)),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read saved hierarchy parent identities: ", conditionMessage(error)),
+        class = "finnts_update_artifact_error", parent = error)
+    }
+  )
+  if (!is.data.frame(data) ||
+      !all(c("Combo", combo_variables) %in% names(data))) {
+    rlang::abort("Saved hierarchy input is missing its original combo columns.",
+      class = "finnts_update_artifact_error")
+  }
+  data <- unique(data[, c("Combo", combo_variables), drop = FALSE])
+  if (anyDuplicated(data$Combo) ||
+      !setequal(data$Combo, hierarchy$original_combos)) {
+    rlang::abort("Saved hierarchy input does not match its original series mapping.",
+      class = "finnts_update_artifact_error")
+  }
+  counts <- vapply(data[, combo_variables, drop = FALSE], dplyr::n_distinct, integer(1))
+  variables <- combo_variables[order(counts, seq_along(counts))]
+  parents <- standard_hierarchy_parents(hierarchy)
+  levels <- rep(seq_len(length(hierarchy$nodes) - 1L),
+    times = vapply(utils::head(hierarchy$nodes, -1L), sum, numeric(1)))
+  if (length(variables) != length(hierarchy$nodes) ||
+      length(levels) != length(parents)) {
+    rlang::abort("Saved hierarchy input does not match its parent levels.",
+      class = "finnts_update_artifact_error")
+  }
+  vapply(seq_along(parents), function(index) {
+    columns <- variables[seq_len(levels[index])]
+    values <- unique(data[match(parents[[index]], data$Combo), columns, drop = FALSE])
+    if (nrow(values) != 1L) {
+      rlang::abort(paste0("Saved hierarchy input assigns multiple groups to parent '",
+        names(parents)[index], "'."), class = "finnts_update_artifact_error")
+    }
+    hash_data(lapply(values, as.character))
+  }, character(1)) %>%
+    stats::setNames(names(parents))
+}
+
 # Standard parent letters present in both versions that now name a different
 # group: their surviving member series differ, or the versions share no member
-# series, so the group cannot be confirmed. Shared series keep every combo
-# value, so an unchanged group always keeps its surviving members. Parents
+# series, so membership alone cannot confirm the group. The caller can resolve
+# that uncertainty with the original saved parent values. Parents
 # only in one version (added or removed after the existing letters) are not
 # reassignments. Returns letters in current order; grouped or legacy metadata
 # without a standard node list returns none. No I/O.
@@ -1209,8 +1258,13 @@ standard_hierarchy_reassigned_parents <- function(previous, current) {
 # when known. Raises finnts_hierarchy_change_error listing up to five letters
 # with example series; its explanation field holds the message without the
 # update_forecast() prefix for reuse in failure-limit errors. Returns invisibly
-# when nothing changed. No I/O.
-check_standard_hierarchy_parents <- function(previous, current, previous_version = NULL) {
+# when nothing changed.
+# Optional previous_info/current_info plus original combo_variables resolve
+# parents with no common leaves from their existing hts_data files. Missing or
+# inconsistent saved inputs remain errors; identities stay in memory only.
+check_standard_hierarchy_parents <- function(previous, current, previous_version = NULL,
+                                              previous_info = NULL, current_info = NULL,
+                                              combo_variables = NULL) {
   reassigned <- standard_hierarchy_reassigned_parents(previous, current)
   if (!length(reassigned)) {
     return(invisible(NULL))
@@ -1218,6 +1272,18 @@ check_standard_hierarchy_parents <- function(previous, current, previous_version
 
   before <- standard_hierarchy_parents(previous)
   after <- standard_hierarchy_parents(current)
+  unconfirmed <- reassigned[vapply(reassigned, function(label) {
+    !length(intersect(before[[label]], after[[label]]))
+  }, logical(1))]
+  if (length(unconfirmed) && length(combo_variables) &&
+      !is.null(previous_info) && !is.null(current_info)) {
+    old_keys <- standard_hierarchy_parent_keys(previous, previous_info, combo_variables)
+    new_keys <- standard_hierarchy_parent_keys(current, current_info, combo_variables)
+    reassigned <- setdiff(reassigned, unconfirmed[
+      old_keys[unconfirmed] == new_keys[unconfirmed]
+    ])
+    if (!length(reassigned)) return(invisible(NULL))
+  }
   series <- function(members) {
     paste0(
       paste(utils::head(members, 3L), collapse = ", "),

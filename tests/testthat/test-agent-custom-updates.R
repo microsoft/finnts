@@ -28,6 +28,33 @@ test_that("public custom update replays the exact approved version on new data",
   })
 })
 
+test_that("custom update markers preserve opaque request IDs and exact retries", {
+  for (request_id in c("20261110211115123", "00042")) local({
+    fixture <- custom_update_fixture(updated = FALSE)
+    local_custom_update_runtime()
+    args <- fixture$args
+    args$request_id <- request_id
+    args$agent_action <- "update_forecast"
+    current <- do.call(set_agent_info_custom, args)
+    before <- load_agent_runs(args$project_info)
+    before <- before[before$run_id == current$run_id, , drop = FALSE]
+    prepared <- prepare_agent_custom_update(current, 123)
+    after <- load_agent_runs(args$project_info)
+    after <- after[after$run_id == current$run_id, , drop = FALSE]
+    expect_identical(after$request_id, request_id)
+    expect_identical(after[, names(before)], before)
+    expect_identical(after$custom_agent_update_id, prepared$custom_agent_update_id)
+
+    files <- sort(list.files(args$project_info$path, recursive = TRUE, full.names = TRUE))
+    hashes <- tools::md5sum(files)
+    retry <- do.call(set_agent_info_custom, args)
+    expect_identical(retry$run_id, current$run_id)
+    expect_equal(retry$agent_version, current$agent_version)
+    expect_identical(tools::md5sum(sort(list.files(args$project_info$path,
+      recursive = TRUE, full.names = TRUE))), hashes)
+  })
+})
+
 test_that("finalization preserves numeric-looking identities through both CSV rewrites", {
   for (mode in c("local", "global")) for (run_id in c("40607e5321822937", "4282d17137126405", "ordinary-run")) local({
     info <- list(project_info = list(
