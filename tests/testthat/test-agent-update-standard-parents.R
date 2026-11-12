@@ -227,6 +227,29 @@ test_that("global updates count parent changes as failed series", {
     expect_match(result$failure_reason, "'A' was North--A, North--B; now Alpha--A, Alpha--B", fixed = TRUE)
     expect_false(grepl("Error in update_forecast()", result$failure_reason, fixed = TRUE))
   }
+
+  artifact_condition <- rlang::error_cnd(
+    "finnts_update_artifact_error",
+    message = "Cannot read saved hierarchy parent identities: Parent data access denied"
+  )
+  artifact_wrappers <- list(
+    direct = function(...) stop(artifact_condition),
+    isolated = function(...) stop(structure(class = c("callr_status_error", "error", "condition"),
+      list(message = "Child R process failed.", call = NULL, parent = artifact_condition)))
+  )
+  for (mode in names(artifact_wrappers)) {
+    testthat::local_mocked_bindings(
+      load_agent_custom_update_state = function(agent_info) agent_info,
+      update_forecast_combo = artifact_wrappers[[mode]]
+    )
+    expect_error(
+      update_global_models(agent_info, best, NULL, FALSE, 1, 123),
+      "Parent data access denied",
+      fixed = TRUE,
+      class = "finnts_update_artifact_error",
+      info = mode
+    )
+  }
 })
 
 test_that("parent changes fall back within the failure limit and explain the limit error", {

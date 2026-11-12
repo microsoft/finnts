@@ -1613,7 +1613,12 @@ update_global_models <- function(agent_info,
   try(foreach::registerDoSEQ(), silent = TRUE)
 
   if (inherits(global_error, "condition")) {
-    if (inherits(global_error, "finnts_update_artifact_error")) stop(global_error)
+    artifact_error <- if (inherits(global_error, "finnts_update_artifact_error")) {
+      global_error
+    } else {
+      global_error[["parent"]]
+    }
+    if (inherits(artifact_error, "finnts_update_artifact_error")) stop(artifact_error)
     # A standard parent change leaves no reusable global choice, so its series
     # count as failed updates: default fallback within the failure limit, and
     # the explanation is kept for the limit error. Spark's isolated R process
