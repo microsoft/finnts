@@ -67,8 +67,10 @@
 #'   time series in parallel. Can only be used if parallel_processing is
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
-#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-#'   than number of cores on machine minus 1.
+#'   on local machine or within Azure. Default of NULL uses every available core minus one, respecting container CPU
+#'   limits. With `parallel_processing = "spark"` and `inner_parallel = TRUE`, NULL instead gives each time series its
+#'   share of the executor node's cores (see `vignette("parallel-processing")`). Can't be greater than the available
+#'   cores minus one.
 #' @param negative_forecast If TRUE, allow forecasts to dip below zero.
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses
 #'   these values based on the date_type.
@@ -243,6 +245,10 @@ forecast_time_series <- function(run_info = NULL,
     seed = seed,
     custom_models = custom_models
   )
+
+  # train, ensemble and final stages share one inner pool when series run in
+  # this process; each stage would otherwise start its own
+  local_inner_pool(inner_parallel && is.null(parallel_processing))
 
   train_models(
     run_info = run_info,

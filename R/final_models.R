@@ -106,8 +106,11 @@
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't be
-#'   greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #'
 #' @return Final model outputs are written to disk.
 #'
@@ -162,6 +165,8 @@ final_models <- function(run_info,
     parallel_processing,
     inner_parallel
   )
+  # inner pools only; num_cores itself is passed on unchanged
+  inner_num_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
   # get run splits
   model_train_test_tbl <- read_selection_file(run_info, "prep_models", "-train_test_split")
@@ -534,72 +539,12 @@ final_models <- function(run_info,
         }
 
         # simple model averaging
-        if (average_models & length(final_model_list) > 1) {
-          # create model combinations list
-          model_combinations <- tibble::tibble()
-
-          for (number in 2:min(length(final_model_list), max_model_average)) {
-            temp <- data.frame(gtools::combinations(v = final_model_list, n = length(final_model_list), r = number))
-
-            temp <- temp %>%
-              tidyr::unite(Model_Combo, colnames(temp)) %>%
-              dplyr::select(Model_Combo) %>%
-              tibble::tibble()
-
-            model_combinations <- rbind(model_combinations, temp)
-          }
-
-          iter_list <- model_combinations %>%
-            dplyr::pull(Model_Combo)
-
-          par_info <- par_start(
-            run_info = run_info,
-            parallel_processing = if (inner_parallel) {
-              "local_machine"
-            } else {
-              NULL
-            },
-            num_cores = num_cores,
-            task_length = nrow(iter_list)
+        averages_tbl <- if (average_models & length(final_model_list) > 1) {
+          average_model_forecasts(predictions_tbl, final_model_list, max_model_average,
+            run_info = run_info, inner_parallel = inner_parallel, num_cores = inner_num_cores
           )
-
-          inner_cl <- par_info$cl
-          inner_packages <- par_info$packages
-          `%op%` <- par_info$foreach_operator
-
-          averages_tbl <- foreach::foreach(
-            x = iter_list,
-            .combine = "rbind",
-            .packages = inner_packages,
-            .errorhandling = "remove",
-            .verbose = FALSE,
-            .inorder = FALSE,
-            .multicombine = TRUE,
-            .noexport = NULL
-          ) %op%
-            {
-              # get list of models to average
-              model_list <- strsplit(x, "_")[[1]]
-
-              # create model average
-              final_tbl <- predictions_tbl %>%
-                dplyr::filter(Model_ID %in% model_list) %>%
-                dplyr::group_by(Combo, Train_Test_ID, Date) %>%
-                dplyr::summarise(
-                  Target = mean(Target, na.rm = TRUE),
-                  Forecast = mean(Forecast)
-                ) %>%
-                dplyr::mutate(Model_ID = x) %>%
-                dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Target, Forecast) %>%
-                dplyr::ungroup()
-
-              return(final_tbl)
-            } %>%
-            base::suppressPackageStartupMessages()
-
-          par_end(inner_cl)
         } else {
-          averages_tbl <- NULL
+          NULL
         }
 
         # choose best overall model
@@ -1042,6 +987,153 @@ final_models <- function(run_info,
       fcst_data, model_train_test_tbl, cache = selection_cache)
   }
   invisible(result)
+}
+
+#' Simple model-average combinations for one series
+#'
+#' Every combination of 2 up to `max_model_average` eligible models, in the
+#' order `gtools::combinations()` gives (sorted IDs), with members joined by
+#' `"_"`. Model IDs never contain `"_"`, so the label also lists its members.
+#'
+#' @param model_ids Eligible model IDs.
+#' @param max_model_average Largest number of models in one average.
+#'
+#' @return Character vector of combination IDs.
+#' @noRd
+model_average_combinations <- function(model_ids, max_model_average) {
+  unlist(lapply(2:min(length(model_ids), max_model_average), function(number) {
+    members <- gtools::combinations(v = model_ids, n = length(model_ids), r = number)
+    apply(members, 1, paste, collapse = "_")
+  }))
+}
+
+#' Compute simple model averages for a set of combinations
+#'
+#' One grouped pass replaces a filter and summarise per combination. Joining
+#' the predictions to the membership table keeps each group's rows in
+#' prediction order, so base `mean()` sees the same values in the same order
+#' as the per-combination loop and the averages are bit-identical. Uses only
+#' `pkg::` calls and base R so it can run on pool workers.
+#'
+#' @param combos Combination IDs from `model_average_combinations()`.
+#' @param predictions_tbl Predictions with `Combo`, `Model_ID`,
+#'   `Train_Test_ID`, `Date`, `Target` and `Forecast`.
+#'
+#' @return Tibble with `Combo`, `Model_ID` (the combination ID),
+#'   `Train_Test_ID`, `Date`, `Target` (mean ignoring `NA`) and `Forecast`
+#'   (mean), one row per combination and Train_Test_ID/Date, unordered.
+#' @noRd
+average_model_chunk <- function(combos, predictions_tbl) {
+  members <- strsplit(combos, "_", fixed = TRUE)
+  membership <- data.frame(
+    Model_Combo = rep(combos, lengths(members)), Model_ID = unlist(members),
+    stringsAsFactors = FALSE
+  )
+  long <- dplyr::inner_join(predictions_tbl, membership, by = "Model_ID", relationship = "many-to-many")
+  key <- paste(long$Model_Combo, long$Combo, long$Train_Test_ID, as.numeric(long$Date), sep = "\r")
+  groups <- factor(key, levels = unique(key))
+  out <- as.data.frame(long[!duplicated(key), c("Combo", "Model_Combo", "Train_Test_ID", "Date")])
+  out$Target <- vapply(split(long$Target, groups), mean, numeric(1), na.rm = TRUE, USE.NAMES = FALSE)
+  out$Forecast <- vapply(split(long$Forecast, groups), mean, numeric(1), USE.NAMES = FALSE)
+  names(out)[names(out) == "Model_Combo"] <- "Model_ID"
+  tibble::as_tibble(out[, c("Combo", "Model_ID", "Train_Test_ID", "Date", "Target", "Forecast")])
+}
+
+#' Simple model averages for one series
+#'
+#' Averages every combination of up to `max_model_average` eligible models
+#' with `average_model_chunk()`. Below `pool_threshold` combinations (3,000,
+#' where a pool's startup stops paying off on Windows and Synapse) everything
+#' runs in this process. Above it, with `inner_parallel`, chunks run on an
+#' inner pool. A chunk that fails there is recomputed in this process with the
+#' same function, so a lost worker can never silently drop an average and
+#' change the selected model (one warning reports it). Averages feed the
+#' Agent's average-model accuracy signal, so the result is bit-identical to
+#' the per-combination loop it replaced, in the same row order.
+#'
+#' @param predictions_tbl Predictions for one series with `Combo`,
+#'   `Model_ID`, `Train_Test_ID`, `Date`, `Target` and `Forecast`.
+#' @param model_ids Eligible model IDs to average.
+#' @param max_model_average Largest number of models in one average.
+#' @param run_info Run info for the pool (needed only on the pool path).
+#' @param inner_parallel `TRUE` to allow the pool path.
+#' @param num_cores Core limit for the pool, or `NULL` for the default.
+#' @param pool_threshold Smallest combination count that uses the pool.
+#'
+#' @return `NULL` when fewer than two models are eligible, otherwise a tibble
+#'   with `Combo`, `Model_ID`, `Train_Test_ID`, `Date`, `Target` and
+#'   `Forecast`, ordered by combination, then `Combo`, `Train_Test_ID` and
+#'   `Date`. Errors, naming the series, when an average can't be computed in
+#'   this process either.
+#' @noRd
+average_model_forecasts <- function(predictions_tbl,
+                                    model_ids,
+                                    max_model_average,
+                                    run_info = NULL,
+                                    inner_parallel = FALSE,
+                                    num_cores = NULL,
+                                    pool_threshold = 3000L) {
+  if (length(model_ids) < 2) {
+    return(NULL)
+  }
+
+  combos <- model_average_combinations(model_ids, max_model_average)
+  series <- paste(unique(as.character(predictions_tbl$Combo)), collapse = ", ")
+  predictions_tbl <- predictions_tbl[, c("Combo", "Model_ID", "Train_Test_ID", "Date", "Target", "Forecast")]
+  chunk_fn <- average_model_chunk
+  parts <- list()
+  missing <- combos
+
+  if (isTRUE(inner_parallel) && length(combos) >= pool_threshold) {
+    par_info <- par_start(
+      run_info = run_info,
+      parallel_processing = "local_machine",
+      num_cores = num_cores,
+      task_length = ceiling(length(combos) / 200),
+      inner = TRUE
+    )
+    `%op%` <- par_info$foreach_operator
+    chunk_size <- ceiling(length(combos) / max(1L, length(par_info$cl)))
+    chunks <- unname(split(combos, ceiling(seq_along(combos) / chunk_size)))
+
+    results <- foreach::foreach(
+      chunk = chunks,
+      .packages = par_info$packages,
+      .errorhandling = "pass",
+      .inorder = TRUE
+    ) %op% {
+      chunk_fn(chunk, predictions_tbl)
+    }
+    par_end(par_info$cl)
+
+    failed <- vapply(results, function(result) inherits(result, "condition"), logical(1))
+    parts <- results[!failed]
+    done <- unique(unlist(lapply(parts, function(part) part$Model_ID)))
+    missing <- setdiff(combos, done)
+    if (length(missing) > 0) {
+      reason <- if (any(failed)) conditionMessage(results[[which(failed)[1]]]) else "no result returned"
+      warning(
+        length(missing), " model average(s) for series '", series, "' failed on parallel workers ",
+        "and were recomputed in the main process. First worker error: ", reason,
+        call. = FALSE
+      )
+    }
+  }
+
+  if (length(missing) > 0) {
+    recomputed <- tryCatch(
+      lapply(unname(split(missing, ceiling(seq_along(missing) / 5000))), chunk_fn, predictions_tbl = predictions_tbl),
+      error = function(e) {
+        stop("Model averages could not be computed for series '", series, "': ", conditionMessage(e), call. = FALSE)
+      }
+    )
+    parts <- c(parts, recomputed)
+  }
+
+  averages <- dplyr::bind_rows(parts)
+  averages[order(match(averages$Model_ID, combos), averages$Combo, averages$Train_Test_ID, averages$Date,
+    method = "radix"
+  ), ]
 }
 
 complete_reconciled_forecast <- function(forecasts, run_info, run_log, splits,

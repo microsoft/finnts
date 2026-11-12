@@ -54,6 +54,7 @@ Imports:
     magrittr,
     methods,
     parallel,
+    parallelly (>= 1.42.0),
     parsnip (>= 1.3.0),
     plyr,
     purrr,

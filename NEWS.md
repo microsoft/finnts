@@ -26,6 +26,11 @@
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 - `inner_parallel = TRUE` again tunes and refits models in parallel with tune 2.x, reusing the existing worker pool.
   - The caller's `future` plan is restored when each step finishes or is cancelled.
+  - When series run one after another, worker processes now start once and are reused instead of restarting per series.
+  - Pools are sized to the available work and respect `num_cores` and container CPU limits.
+  - On Spark, each series still starts its own pool, reused across its Agent iterations.
+  - On Spark, each series' inner workers share its executor node's cores; see the parallel processing vignette.
+- Simple model averages are computed up to 50 times faster, with identical results.
 
 ## Bug Fixes
 
@@ -97,6 +102,9 @@
 -   Fixed a bug in leave-one-feature-out (LOFO) feature selection; it now works for monthly, quarterly and yearly local models.
   -   Selected features, forecasts and runtimes change for these feature-selection runs; existing saved runs are unchanged.
   -   LOFO is the slowest selection step; `inner_parallel = TRUE` runs it in parallel.
+  -   LOFO now respects `num_cores` and shares the inner worker pool.
+-   Simple model averages are no longer silently dropped when an inner-parallel worker fails, which could change the selected model.
+  -   Failed averages are recomputed in the main process with a warning.
 -   Replaced deprecated `dials::grid_latin_hypercube()` and timetk rolling-window calls that relied on deprecated `purrr::cross_df()`.
   -   Prepared features and ensemble grids are unchanged, except with `num_hyperparameters = 1`, where ensembles pick their setting like individual models.
     -   Results remain reproducible for a given seed.
@@ -104,7 +112,7 @@
 ## Breaking Changes
 
 -   Requires R 4.1 and tune 2.0.1 or later; minimum dials, parsnip, recipes, rsample and workflows versions also rise.
-  -   Adds `future` and `future.apply` imports; both were already installed through existing dependencies.
+  -   Adds `future`, `future.apply` and `parallelly` imports; all were already installed through existing dependencies.
   -   Forecasts may shift once when upgrading from tune 1.x, because tune 2.x seeds resampling differently.
   -   Upgrade Spark cluster libraries to these versions before installing this finnts version.
 

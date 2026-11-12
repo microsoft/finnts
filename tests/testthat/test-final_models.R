@@ -333,3 +333,128 @@ test_that("early return fires for bottoms_up regardless of reconciled files", {
   }
   expect_true(recon_complete)
 })
+
+# Synthetic predictions for one series with `models` complete candidates: each
+# has the same Train_Test_ID x Date rows, the future split (Train_Test_ID 1)
+# has NA targets, and rows are shuffled so averaging can't rely on row order.
+# Returns a tibble shaped like final_models()' predictions_tbl.
+averaging_predictions <- function(models = 4, back_tests = 3, horizon = 4) {
+  set.seed(11)
+  grid <- expand.grid(
+    h = seq_len(horizon), Train_Test_ID = seq_len(back_tests + 1), Model_ID = sprintf("m%02d--local--R1", seq_len(models)),
+    stringsAsFactors = FALSE
+  )
+  grid$Date <- as.Date("2021-01-01") + (grid$Train_Test_ID * horizon + grid$h) * 31
+  grid$Target <- ifelse(grid$Train_Test_ID == 1, NA_real_, round(100 + stats::rnorm(nrow(grid), sd = 10), 3))
+  grid$Forecast <- 100 + stats::rnorm(nrow(grid), sd = 7) / 3
+  grid <- grid[sample(nrow(grid)), ]
+  tibble::tibble(
+    Combo = "A", Model_ID = grid$Model_ID, Model_Name = sub("--.*", "", grid$Model_ID), Model_Type = "local",
+    Recipe_ID = "R1", Train_Test_ID = as.numeric(grid$Train_Test_ID), Date = grid$Date,
+    Forecast = grid$Forecast, Target = grid$Target
+  )
+}
+
+# The per-combination averaging loop final_models() used before the grouped
+# computation, kept as the bit-identical reference. Returns NULL for fewer
+# than two models, otherwise one tibble of averages in combination order.
+averaging_reference <- function(predictions_tbl, model_ids, max_model_average) {
+  if (length(model_ids) < 2) {
+    return(NULL)
+  }
+  combos <- unlist(lapply(2:min(length(model_ids), max_model_average), function(number) {
+    temp <- data.frame(gtools::combinations(v = model_ids, n = length(model_ids), r = number))
+    temp %>%
+      tidyr::unite(Model_Combo, colnames(temp)) %>%
+      dplyr::pull(Model_Combo)
+  }))
+  suppressMessages(dplyr::bind_rows(lapply(combos, function(x) {
+    model_list <- strsplit(x, "_")[[1]]
+    predictions_tbl %>%
+      dplyr::filter(Model_ID %in% model_list) %>%
+      dplyr::group_by(Combo, Train_Test_ID, Date) %>%
+      dplyr::summarise(Target = mean(Target, na.rm = TRUE), Forecast = mean(Forecast)) %>%
+      dplyr::mutate(Model_ID = x) %>%
+      dplyr::select(Combo, Model_ID, Train_Test_ID, Date, Target, Forecast) %>%
+      dplyr::ungroup()
+  })))
+}
+
+# Run info fields par_start() reads for a local pool; no files are written.
+averaging_run_info <- function() {
+  list(storage_object = NULL, path = tempdir(), data_output = "csv", object_output = "rds")
+}
+
+test_that("grouped model averages are bit-identical to the per-combination loop", {
+  predictions <- averaging_predictions(models = 4)
+  ids <- sort(unique(predictions$Model_ID))
+
+  expect_null(average_model_forecasts(predictions, ids[1], 3))
+  for (case in list(list(ids[1:2], 3), list(ids, 3), list(ids, 2), list(rev(ids), 3))) {
+    expect_identical(
+      average_model_forecasts(predictions, case[[1]], case[[2]]),
+      averaging_reference(predictions, case[[1]], case[[2]])
+    )
+  }
+})
+
+test_that("model averaging below the pool threshold never starts a pool", {
+  testthat::local_mocked_bindings(par_start = function(...) stop("no pool expected"))
+  predictions <- averaging_predictions(models = 4)
+  ids <- unique(predictions$Model_ID)
+
+  result <- average_model_forecasts(predictions, ids, 3,
+    run_info = averaging_run_info(), inner_parallel = TRUE, num_cores = 2
+  )
+  expect_identical(result, averaging_reference(predictions, ids, 3))
+})
+
+# Replace average_model_chunk() with a version that fails for any chunk
+# containing `sentinel`, either only on pool workers (`workers_only = TRUE`)
+# or everywhere. The replacement's environment holds only base R, so workers
+# don't need this test's environment or package. Lasts until the test ends.
+averaging_lose_chunk <- function(sentinel, workers_only, env = parent.frame()) {
+  holder <- new.env(parent = baseenv())
+  holder$main_pid <- Sys.getpid()
+  holder$sentinel <- sentinel
+  holder$workers_only <- workers_only
+  real_chunk <- average_model_chunk
+  environment(real_chunk) <- baseenv()
+  holder$real_chunk <- real_chunk
+  lose <- function(combos, predictions_tbl) {
+    on_worker <- Sys.getpid() != main_pid
+    if (sentinel %in% combos && (on_worker || !workers_only)) stop("worker lost")
+    real_chunk(combos, predictions_tbl)
+  }
+  environment(lose) <- holder
+  testthat::local_mocked_bindings(average_model_chunk = lose, .env = env)
+}
+
+test_that("model averages lost on pool workers are recomputed in the main process", {
+  skip_on_cran()
+  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  testthat::local_mocked_bindings(par_attach_worker_packages = function(cl, packages) invisible(NULL))
+  old_plan <- future::plan(future::sequential)
+  withr::defer(future::plan(old_plan))
+  predictions <- averaging_predictions(models = 5)
+  ids <- unique(predictions$Model_ID)
+  expected <- averaging_reference(predictions, ids, 3)
+  averaging_lose_chunk(expected$Model_ID[[1]], workers_only = TRUE)
+
+  expect_warning(
+    result <- average_model_forecasts(predictions, ids, 3,
+      run_info = averaging_run_info(), inner_parallel = TRUE, num_cores = 2, pool_threshold = 1
+    ),
+    "recomputed in the main process.*worker lost"
+  )
+  expect_identical(result, expected)
+  expect_true(inherits(future::plan(), "sequential"))
+})
+
+test_that("model averaging errors with the series when a recompute also fails", {
+  predictions <- averaging_predictions(models = 3)
+  ids <- unique(predictions$Model_ID)
+  averaging_lose_chunk(averaging_reference(predictions, ids, 3)$Model_ID[[1]], workers_only = FALSE)
+
+  expect_error(average_model_forecasts(predictions, ids, 3), "series 'A'.*worker lost")
+})

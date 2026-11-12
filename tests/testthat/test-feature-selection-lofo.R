@@ -72,9 +72,11 @@ test_that("train_models passes inner_parallel through to LOFO", {
   dates <- seq(as.Date("2017-01-01"), by = "month", length.out = 48)
   input <- data.frame(Date = dates, id = "A", value = 500 + seq_along(dates) + 20 * sin(seq_along(dates)))
   modes <- list()
+  cores <- list()
   testthat::local_mocked_bindings(
-    lofo_fn = function(run_info, data, train_test_splits, parallel_processing, ...) {
+    lofo_fn = function(run_info, data, train_test_splits, parallel_processing, num_cores = NULL, ...) {
       modes[[length(modes) + 1]] <<- if (is.null(parallel_processing)) "NULL" else parallel_processing
+      cores[[length(cores) + 1]] <<- num_cores
       tibble::tibble(LOFO_Var = "Baseline_Model", Var_RMSE = 1, Imp = 0)
     },
     .package = "finnts"
@@ -94,4 +96,25 @@ test_that("train_models passes inner_parallel through to LOFO", {
   }
 
   expect_identical(unlist(modes), c("NULL", "local_machine"))
+  expect_identical(unlist(cores), c(2, 2))
+})
+
+test_that("LOFO sizes its inner pool from the caller's num_cores", {
+  skip_if_not_installed("xgboost")
+  fixture <- lofo_fixture()
+  calls <- list()
+  real_par_start <- par_start
+  testthat::local_mocked_bindings(
+    par_start = function(run_info, parallel_processing, num_cores, task_length, inner = FALSE) {
+      calls[[length(calls) + 1]] <<- list(mode = parallel_processing, num_cores = num_cores, inner = inner)
+      real_par_start(run_info, NULL, num_cores, task_length)
+    }
+  )
+
+  lofo_fn(fixture$run_info, fixture$data, fixture$splits, parallel_processing = "local_machine", num_cores = 2, seed = 123)
+
+  expect_length(calls, 1)
+  expect_identical(calls[[1]]$mode, "local_machine")
+  expect_identical(calls[[1]]$num_cores, 2)
+  expect_true(calls[[1]]$inner)
 })

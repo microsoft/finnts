@@ -739,7 +739,7 @@ test_that("local dispatch serializes only reference-only free-variable context",
   )
   update_local_models(agent, previous, NULL, FALSE, 1, 123)
   expected <- list(agent_info_lean = lean, project_info = agent$project_info,
-    prev_run_id = "run-4", num_cores = 1, inner_parallel = FALSE, seed = 123)
+    prev_run_id = "run-4", num_cores = 1, inner_parallel = FALSE, seed = 123, task_cores = 1)
   expect_setequal(names(captured$globals), names(expected))
   expect_identical(captured$globals$agent_info_lean, lean)
   expect_equal(length(serialize(captured[c("expression", "globals")], NULL)),

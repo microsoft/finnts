@@ -20,8 +20,11 @@
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't
-#'   be greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Ensemble model outputs are written to disk
@@ -75,6 +78,8 @@ ensemble_models <- function(run_info,
     parallel_processing,
     inner_parallel
   )
+  # inner pools only; num_cores itself is passed on unchanged
+  inner_num_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
   # get input and combo values
   log_df <- read_file(run_info,
@@ -195,6 +200,8 @@ ensemble_models <- function(run_info,
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
+  # series ensembled one after another in this process share one inner pool
+  local_inner_pool(inner_parallel && is.null(parallel_processing))
 
   # get ind model forecasts ready for ensemble models
   ensemble_tbl <- foreach::foreach(
@@ -364,6 +371,7 @@ ensemble_models <- function(run_info,
         # ensure variables get exported
         model_train_test_tbl <- model_train_test_tbl
         model_workflow_tbl <- model_workflow_tbl
+        inner_num_cores <- inner_num_cores
         seed <- seed
         negative_fcst_adj <- negative_fcst_adj
         negative_forecast <- negative_forecast
@@ -376,8 +384,11 @@ ensemble_models <- function(run_info,
         } else {
           NULL
         },
-        num_cores = num_cores,
-        task_length = num_cores
+        num_cores = inner_num_cores,
+        task_length = inner_task_count(model_hyperparameters_tbl, model_train_test_tbl,
+          refit_types = c("Back_Test", "Future_Forecast")
+        ),
+        inner = TRUE
       )
 
       inner_cl <- par_info$cl

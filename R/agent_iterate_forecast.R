@@ -170,8 +170,11 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't be
-#'   greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return NULL
@@ -437,6 +440,10 @@ iterate_forecast <- function(agent_info,
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
     agent_info_lean <- agent_custom_worker_info(agent_info, keep_llm = TRUE)
+    # series optimized one after another in this process share one inner pool
+    local_inner_pool(inner_parallel && is.null(parallel_processing))
+    # each Spark task's share of its node for automatic inner pools (D13)
+    task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
     # foreach over each combo file
     local_models <- foreach::foreach(
@@ -465,6 +472,7 @@ iterate_forecast <- function(agent_info,
           agent_info_lean <- agent_info_lean
           safe_dir_ls <- safe_dir_ls
           list_files <- list_files
+          task_cores <- task_cores
         }
 
         # adjust max iterations based on previous runs
@@ -488,8 +496,9 @@ iterate_forecast <- function(agent_info,
             cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
           }
 
-          # run the local model workflow
-          fcst_results <- capture_forecast_warnings(fcst_agent_workflow(
+          # run the local model workflow; its iterations and stages share one
+          # inner pool in this worker process
+          fcst_results <- capture_forecast_warnings(with_inner_pool(fcst_agent_workflow(
             agent_info = agent_info_lean,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
@@ -500,7 +509,7 @@ iterate_forecast <- function(agent_info,
             seed = seed,
             previous_run_results = previous_runs,
             fallback_available = FALSE
-          ))
+          ), active = inner_parallel, cores = task_cores))
           fallback_warnings <- fcst_results$warnings
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")

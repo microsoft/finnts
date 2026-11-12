@@ -84,8 +84,8 @@ one after another. Value of 'local_machine' leverages all cores on current machi
 Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up. Used when running parallel computations
-on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-than number of cores on machine minus 1.}
+on local machine or within Azure. Default of NULL uses every available core minus one, respecting container CPU
+limits. Can't be greater than the available cores minus one.}
 
 \item{fourier_periods}{List of values to use in creating fourier series as features. Default of NULL automatically chooses
 these values based on the date_type.}
