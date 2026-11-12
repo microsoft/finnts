@@ -439,6 +439,23 @@ test_that("CSV character columns use one payload read and retain other types", {
   })
 })
 
+# Route exact final_output reads through a harness's mocked read_file `path`
+# lookup, so predecessor checks see the harness's in-memory outputs. Other exact
+# reads use `original`, forced before mocking. Returns a read_exact_artifact
+# replacement; nothing is written.
+final_output_exact_reader <- function(original) {
+  force(original)
+  function(run_info, file_list, return_type = "df", allow_missing = FALSE,
+           character_columns = NULL, missing_value = NULL) {
+    if (!any(grepl("/final_output/", as.character(file_list), fixed = TRUE))) {
+      return(original(run_info, file_list, return_type = return_type, allow_missing = allow_missing,
+        character_columns = character_columns, missing_value = missing_value))
+    }
+    read_file(run_info, path = as.character(file_list), return_type = return_type,
+      allow_missing = allow_missing, character_columns = character_columns)
+  }
+}
+
 # Run startup against deterministic version metadata and optional real current
 # model/forecast artifacts. Returns startup routing; provider errors are injected
 # only for the requested final artifact. Temporary paths belong to the caller.
@@ -456,6 +473,7 @@ run_initial_checks_case <- function(final_outputs,
     agent_info$project_info$date_type <- "month"
   }
   original_reader <- read_file
+  exact_reader <- final_output_exact_reader(read_exact_artifact)
   agent_runs <- make_update_agent_run_table(forecast_approach)
   run_ids <- agent_runs$run_id
   run_files <- paste0(run_ids, "-agent_run.csv")
@@ -537,6 +555,7 @@ run_initial_checks_case <- function(final_outputs,
       }
       result
     },
+    read_exact_artifact = exact_reader,
     load_update_runs = function(agent_info) {
       result <- intermediate_tables[[agent_info$run_id]]
       if (is.null(result)) {
@@ -1395,6 +1414,7 @@ test_that("analyze_results uses finalized previous versions", {
     "run-1" = make_complete_final_outputs("run-1", combos = "combo-a", weighted_mape = 0.1)
   )
   final_outputs[["run-4"]]$forecast <- NULL
+  exact_reader <- final_output_exact_reader(read_exact_artifact)
 
   testthat::local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
@@ -1439,6 +1459,7 @@ test_that("analyze_results uses finalized previous versions", {
       }
       result
     },
+    read_exact_artifact = exact_reader,
     load_best_agent_run = function(agent_info) intermediate_tables[[agent_info$run_id]],
     get_total_combos = function(agent_info) combos_by_run[[agent_info$run_id]],
     .package = "finnts"

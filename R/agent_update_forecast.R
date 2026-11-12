@@ -678,10 +678,11 @@ agent_run_search_order <- function(agent_runs_tbl) {
 }
 
 # Shared completion check for setup, predecessor selection and diagnostics.
-# Reads each required output once; missing or zero-row outputs count as lacking,
-# and run metadata must be reusable. Returns complete and problem phrases.
-# include_outputs retains the already-read tables for the update consumer only.
-# Provider/read failures propagate. Nothing is written.
+# Reads each required output once by exact path, never listing its folder;
+# missing or zero-row outputs count as lacking, and run metadata must be
+# reusable, with its identifiers kept as text. Returns complete and problem
+# phrases. include_outputs retains the already-read tables for the update
+# consumer only. Provider/read failures propagate. Nothing is written.
 agent_predecessor_status <- function(previous_agent_info, include_outputs = FALSE) {
   approach <- previous_agent_info$forecast_approach
   if (!agent_forecast_approach_recorded(approach)) {
@@ -689,8 +690,15 @@ agent_predecessor_status <- function(previous_agent_info, include_outputs = FALS
   }
 
   required <- agent_run_required_suffixes(approach)
+  info <- previous_agent_info$project_info
+  info$run_name <- previous_agent_info$run_id
   outputs <- stats::setNames(lapply(required, function(suffix) {
-    load_final_agent_artifact(previous_agent_info, suffix, allow_missing = TRUE)
+    read_exact_artifact(info, local_artifact_path(info, "final_output", paste0("-", suffix)),
+      allow_missing = TRUE, missing_value = tibble::tibble(),
+      character_columns = if (identical(suffix, "run_metadata")) {
+        c("combo", "agent_run_id", "best_run_name")
+      }
+    )
   }), required)
   present <- vapply(outputs, nrow, integer(1)) > 0L
   if (!all(present)) {

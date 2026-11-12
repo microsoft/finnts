@@ -127,11 +127,10 @@ test_that("updates use the newest completed version and read each required outpu
   gate_request(args, "iterate-2", "iterate_forecast")
   original_reader <- read_file
   final_reads <- character()
-  testthat::local_mocked_bindings(read_file = function(run_info, path = NULL, ...) {
-    if (!is.null(path) && grepl("final_output", path, fixed = TRUE)) {
-      final_reads <<- c(final_reads, path)
-    }
-    original_reader(run_info, path = path, ...)
+  testthat::local_mocked_bindings(read_file = function(run_info, path = NULL, file_list = NULL, ...) {
+    targets <- as.character(c(path, file_list))
+    final_reads <<- c(final_reads, targets[grepl("final_output", targets, fixed = TRUE)])
+    original_reader(run_info, path = path, file_list = file_list, ...)
   })
   expect_message(
     agent <- gate_request(args, "update-1", "update_forecast"),
@@ -147,6 +146,43 @@ test_that("updates use the newest completed version and read each required outpu
   completed <- find_completed_previous_agent_runs(agent, previous)
   expect_identical(completed[[1]]$agent_info$run_id, first$run_id)
 })
+
+for (provider in c("blob_container", "ms_drive")) {
+  test_that(paste("predecessor checks read", provider, "outputs by exact path without listings"), {
+    path <- withr::local_tempdir()
+    args <- gate_setup_args(path)
+    local_gate_clock()
+    first <- gate_request(args, "iterate-1", "iterate_forecast")
+    write_completed_outputs(args, first)
+    source <- args$project_info
+    source$run_name <- first$run_id
+    transport <- local_artifact_provider(provider)
+    remote <- first
+    remote$project_info$path <- "provider-artifacts"
+    remote$project_info$storage_object <- transport$storage_object
+    target <- remote$project_info
+    target$run_name <- first$run_id
+    suffixes <- c("run_metadata", "forecast", "model_summary", "eda")
+    remote_paths <- vapply(suffixes, function(suffix) {
+      as.character(artifact_test_path(target, "final_output", suffix = paste0("-", suffix)))
+    }, character(1))
+    for (suffix in suffixes) {
+      transport$files[[remote_paths[[suffix]]]] <-
+        artifact_test_path(source, "final_output", suffix = paste0("-", suffix))
+    }
+
+    status <- agent_predecessor_status(remote, include_outputs = TRUE)
+    expect_true(status$complete)
+    expect_identical(status$outputs$run_metadata$agent_run_id, first$run_id)
+    expect_setequal(transport$downloads, unname(remote_paths))
+
+    transport$files[[remote_paths[["forecast"]]]] <- NULL
+    expect_identical(agent_predecessor_status(remote)$problems, "lacks forecast")
+
+    transport$lookup_error <- artifact_http_error(403L, "provider failure")
+    expect_error(agent_predecessor_status(remote), class = "http_403")
+  })
+}
 
 test_that("an empty hierarchy summary cannot authorize a hierarchical predecessor", {
   path <- withr::local_tempdir()
