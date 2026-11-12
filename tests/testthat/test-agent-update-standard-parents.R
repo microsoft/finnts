@@ -137,6 +137,35 @@ test_that("parent identity checks preserve zero-padded group values and storage 
     class = "finnts_update_artifact_error")
 })
 
+test_that("saved parent values catch hierarchy levels reordered by changed series", {
+  previous <- parent_hierarchy(data.frame(Region = c("North", "North", "South"),
+    Product = c("A", "B", "C")), return_info = TRUE)
+  # West gives Region more distinct values, so Product becomes the parent level.
+  current <- parent_hierarchy(data.frame(Region = c("North", "South", "West"),
+    Product = c("A", "C", "A")), return_info = TRUE)
+  check <- function(next_version) {
+    parent_check_error(previous$hierarchy, next_version$hierarchy, 3,
+      previous_info = previous$info, current_info = next_version$info,
+      combo_variables = c("Region", "Product"))
+  }
+  # Surviving series keep their parent letters, so membership alone sees no change.
+  expect_length(standard_hierarchy_reassigned_parents(previous$hierarchy, current$hierarchy), 0L)
+  error <- check(current)
+  expect_s3_class(error, "finnts_hierarchy_change_error")
+  expect_match(conditionMessage(error),
+    "'A' was North--A, North--B (Region North); now North--A, West--A (Product A)", fixed = TRUE)
+  expect_match(conditionMessage(error),
+    "'B' was South--C (Region South); now South--C (Product C)", fixed = TRUE)
+
+  same_levels <- parent_hierarchy(data.frame(Region = c("North", "North", "North", "South"),
+    Product = c("A", "B", "D", "C")), return_info = TRUE)
+  expect_null(check(same_levels))
+
+  # Unchanged series cannot reorder levels, so no saved input is read.
+  local_mocked_bindings(read_exact_artifact = function(...) stop("Unexpected saved hierarchy read"))
+  expect_null(check(previous))
+})
+
 test_that("outer updates keep a parent whose entire bottom population changed", {
   path <- withr::local_tempdir()
   members <- data.frame(Region = c("North", "North", "South", "South"),

@@ -1181,7 +1181,8 @@ standard_hierarchy_parents <- function(hierarchy) {
 # Recover exact parent values from a run's existing bottom-input artifact.
 # combo_variables are the original columns, not expanded ID names. Ordering by
 # distinct count matches standard hierarchy construction, with supplied-order
-# ties. Returns one identity hash per parent, including its ancestor columns.
+# ties. Returns one identity hash per parent, including its ancestor columns,
+# with a "groups" attribute of readable column/value labels for error messages.
 # CSV labels stay text; inconsistent data or storage failures are errors.
 # Reads one deterministic hts_data artifact without listings or writes.
 standard_hierarchy_parent_keys <- function(hierarchy, run_info, combo_variables) {
@@ -1215,22 +1216,27 @@ standard_hierarchy_parent_keys <- function(hierarchy, run_info, combo_variables)
     rlang::abort("Saved hierarchy input does not match its parent levels.",
       class = "finnts_update_artifact_error")
   }
-  vapply(seq_along(parents), function(index) {
+  values <- lapply(seq_along(parents), function(index) {
     columns <- variables[seq_len(levels[index])]
     values <- unique(data[match(parents[[index]], data$Combo), columns, drop = FALSE])
     if (nrow(values) != 1L) {
       rlang::abort(paste0("Saved hierarchy input assigns multiple groups to parent '",
         names(parents)[index], "'."), class = "finnts_update_artifact_error")
     }
-    hash_data(lapply(values, as.character))
-  }, character(1)) %>%
-    stats::setNames(names(parents))
+    lapply(values, as.character)
+  })
+  keys <- stats::setNames(vapply(values, hash_data, character(1)), names(parents))
+  attr(keys, "groups") <- stats::setNames(vapply(values, function(group) {
+    paste(names(group), unlist(group, use.names = FALSE), collapse = ", ")
+  }, character(1)), names(parents))
+  keys
 }
 
 # Standard parent letters present in both versions that now name a different
 # group: their surviving member series differ, or the versions share no member
-# series, so membership alone cannot confirm the group. The caller can resolve
-# that uncertainty with the original saved parent values. Parents
+# series, so membership alone cannot confirm the group. Membership also cannot
+# see levels reordered by added or removed series; the caller resolves both
+# with the original saved parent values when they are available. Parents
 # only in one version (added or removed after the existing letters) are not
 # reassignments. Returns letters in current order; grouped or legacy metadata
 # without a standard node list returns none. No I/O.
@@ -1259,39 +1265,47 @@ standard_hierarchy_reassigned_parents <- function(previous, current) {
 # with example series; its explanation field holds the message without the
 # update_forecast() prefix for reuse in failure-limit errors. Returns invisibly
 # when nothing changed.
-# Optional previous_info/current_info plus original combo_variables resolve
-# parents with no common leaves from their existing hts_data files. Missing or
+# Optional previous_info/current_info plus original combo_variables compare
+# every shared parent letter by its original column values from the existing
+# hts_data files whenever the bottom series changed: membership alone cannot
+# confirm fully replaced groups or see levels reordered by changed distinct
+# counts. Unchanged series cannot reorder levels and read nothing. Missing or
 # inconsistent saved inputs remain errors; identities stay in memory only.
 check_standard_hierarchy_parents <- function(previous, current, previous_version = NULL,
                                               previous_info = NULL, current_info = NULL,
                                               combo_variables = NULL) {
-  reassigned <- standard_hierarchy_reassigned_parents(previous, current)
-  if (!length(reassigned)) {
+  if (identical(previous, current) ||
+    !is_standard_hierarchy(previous) || !is_standard_hierarchy(current)) {
     return(invisible(NULL))
   }
 
   before <- standard_hierarchy_parents(previous)
   after <- standard_hierarchy_parents(current)
-  unconfirmed <- reassigned[vapply(reassigned, function(label) {
-    !length(intersect(before[[label]], after[[label]]))
-  }, logical(1))]
-  if (length(unconfirmed) && length(combo_variables) &&
-      !is.null(previous_info) && !is.null(current_info)) {
+  groups <- NULL
+  if (length(combo_variables) && !is.null(previous_info) && !is.null(current_info) &&
+      !setequal(previous$original_combos, current$original_combos)) {
     old_keys <- standard_hierarchy_parent_keys(previous, previous_info, combo_variables)
     new_keys <- standard_hierarchy_parent_keys(current, current_info, combo_variables)
-    reassigned <- setdiff(reassigned, unconfirmed[
-      old_keys[unconfirmed] == new_keys[unconfirmed]
-    ])
-    if (!length(reassigned)) return(invisible(NULL))
+    labels <- intersect(names(after), names(before))
+    reassigned <- labels[old_keys[labels] != new_keys[labels]]
+    groups <- list(before = attr(old_keys, "groups"), after = attr(new_keys, "groups"))
+  } else {
+    reassigned <- standard_hierarchy_reassigned_parents(previous, current)
   }
-  series <- function(members) {
+  if (!length(reassigned)) {
+    return(invisible(NULL))
+  }
+
+  series <- function(members, label, labels) {
     paste0(
       paste(utils::head(members, 3L), collapse = ", "),
-      if (length(members) > 3L) paste0(" and ", length(members) - 3L, " more") else ""
+      if (length(members) > 3L) paste0(" and ", length(members) - 3L, " more") else "",
+      if (is.null(labels)) "" else paste0(" (", labels[[label]], ")")
     )
   }
   details <- vapply(utils::head(reassigned, 5L), function(label) {
-    paste0("- '", label, "' was ", series(before[[label]]), "; now ", series(after[[label]]))
+    paste0("- '", label, "' was ", series(before[[label]], label, groups$before),
+      "; now ", series(after[[label]], label, groups$after))
   }, character(1))
   if (length(reassigned) > 5L) {
     details <- c(details, paste0("- and ", length(reassigned) - 5L, " more parent nodes"))

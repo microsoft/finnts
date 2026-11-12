@@ -57,6 +57,7 @@
   - In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates: within the failure limit (20% of series, at least 10) they get default forecasts; above it the update stops with the same explanation.
   - Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally. Grouped hierarchies are unchanged.
   - Replacing every bottom series within an unchanged parent is also supported; existing saved input values distinguish it from a reassigned parent name.
+  - Added or removed series that reorder the hierarchy levels (another column now has fewer distinct values) are detected from the same saved input values, which the error now shows for each changed group.
   - Keep the same parent groups, or start a new history with `iterate_forecast()`.
 - Agent forecast updates without a completed earlier Agent version now explain what is missing.
   - The error lists the run logs searched, how many versions were found, what each incomplete version lacks, and the next step: restore the Agent history or start a new one with `iterate_forecast()`.
