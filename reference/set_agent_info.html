@@ -25,7 +25,7 @@ It checks for existing runs and allows for overwriting if specified."><meta prop
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
       </span>
     </div>
 
@@ -146,6 +146,8 @@ for isolated agent sessions.</p></dd>
 <dd><p>A data frame or tibble containing the input data. Leading
 and trailing whitespace in character combo-variable values is removed
 before Finn creates internal series identifiers and writes input artifacts.
+Values left blank are treated as missing and form the <code>"NA"</code> label in
+series names, like other missing combo values.
 Resuming a version uses previously uploaded inputs, not replacement values
 from this data frame. Create a new version to use revised data.</p></dd>
 

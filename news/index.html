@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9020" id="finnts-0709020-development-version">finnts 0.7.0.9020 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709020-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9021" id="finnts-0709021-development-version">finnts 0.7.0.9021 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709021-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9020">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9020"></a></h3>
+<h3 id="improvements-0-7-0-9021">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9021"></a></h3>
 <ul><li>
 <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> creates reusable local/global forecasting models from business rules, validated against worked examples.
 <ul><li>Approval is manual in interactive sessions or automatic.</li>
@@ -134,12 +134,25 @@
 </ul></li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9020">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9020"></a></h3>
+<h3 id="bug-fixes-0-7-0-9021">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9021"></a></h3>
 <ul><li>Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
 <ul><li>Missing values form the <code>"NA"</code> group already used in combo and hierarchy names, so series names and hashes are unchanged.</li>
 <li>A combo column with both missing values and literal <code>"NA"</code> text now errors instead of merging them.</li>
 <li>Previously reconciliation failed with <code>'i' and 'j' must not contain NA</code> after every model had trained.</li>
 <li>Runs that already saved a hierarchy with missing labels need a new run or <code>overwrite = TRUE</code>.</li>
+</ul></li>
+<li>Combo values that are blank after trimming whitespace are now treated as missing values instead of stopping preparation.
+<ul><li>Like other missing values, they form the <code>"NA"</code> label in series and hierarchy names, such as <code>North--NA</code> or <code>Site_NA</code>.</li>
+<li>Empty cells now give the same result whichever file reader produced them.</li>
+<li>
+<code><a href="../reference/validate_prepared_input.html">validate_prepared_input()</a></code> rule <code>R6</code> passes and names the affected columns; <code><a href="../reference/detect_hierarchy.html">detect_hierarchy()</a></code> accepts blanks too.</li>
+<li>Numeric combo columns, targets and external regressors are unchanged, and existing series names do not change.</li>
+</ul></li>
+<li>A combo column mixing missing or blank values with the literal text <code>"NA"</code> now has a clear outcome.
+<ul><li>Bottoms-up forecasts warn and keep combining them into one series, as before.</li>
+<li>Standard hierarchies now stop with the error grouped hierarchies already raise, naming the column.</li>
+<li>Previously some standard-hierarchy inputs failed later with an unclear <code>hts</code> error.</li>
+<li>The duplicate-row error now also explains that blank, missing and <code>"NA"</code> values share one label.</li>
 </ul></li>
 <li>Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
 <ul><li>Previously these series silently received missing regressor values.</li>
@@ -157,6 +170,32 @@
 <ul><li>Missing CSV forecasts no longer return an empty table; storage and read failures propagate.</li>
 </ul></li>
 <li>Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.</li>
+<li>Agent forecast updates now detect when an existing standard-hierarchy parent name (<code>A</code>, <code>B</code>, <code>AA</code>, …) refers to a different group.
+<ul><li>Standard-hierarchy parents are named by position, so such updates could reuse another group’s history or model choice.</li>
+<li>Standard-hierarchy Agent versions stop with an error that lists the changed groups.</li>
+<li>In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates.</li>
+<li>Within the failure limit (20% of series, at least 10) they get default forecasts.</li>
+<li>Above the limit, the update stops with the same explanation.</li>
+<li>Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally.</li>
+<li>Grouped hierarchies are unchanged.</li>
+<li>Replacing every bottom series within an unchanged parent also works; saved input values tell it apart from a reassignment.</li>
+<li>Added or removed series that reorder the hierarchy levels are also detected from those saved input values.</li>
+<li>The error then shows each changed group’s original column values.</li>
+<li>Keep the same parent groups, or start a new history with <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>.</li>
+</ul></li>
+<li>Agent forecast updates without a completed earlier Agent version now explain what is missing.
+<ul><li>The error lists the run logs searched, versions found and what each incomplete version lacks.</li>
+<li>It suggests restoring the Agent history or starting a new one with <code><a href="../reference/iterate_forecast.html">iterate_forecast()</a></code>.</li>
+<li>Request-ID update setups stop before writing a new version; retrying the same request still resumes an interrupted update.</li>
+<li>Setup and update checks share completion rules: every required final output, including any hierarchy summary, must have rows.</li>
+</ul></li>
+<li>Agent run logs are always read as CSV with text <code>run_id</code> and <code>request_id</code>.
+<ul><li>Projects saving parquet outputs now find their Agent history, and numeric-looking request IDs resume the right run.</li>
+<li>Recording a request ID changes only that run’s own log, adding no other columns.</li>
+<li>Custom-update marker writes also preserve exact request IDs, including leading zeros and values beyond numeric precision.</li>
+<li>Already-corrupted identifiers are not migrated.</li>
+</ul></li>
+<li>finnts imports <code>%||%</code> from rlang, so code using it no longer fails on R versions before 4.4.</li>
 <li>Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
 <ul><li>Negative targets are still clamped to zero for Croston training only.</li>
 </ul></li>
@@ -197,7 +236,7 @@
 <li>Predecessor metadata validates reuse fields only; other final outputs are not checked for schema, combo, or model identity.</li>
 <li>Storage and read failures remain hard errors during predecessor selection.</li>
 <li>Agent duplicate detection treats <code>NULL</code> defaults, equivalent explicit values, and reordered multipart settings as identical, avoiding redundant iterations.</li>
-<li>Trimmed character combo boundaries before validation and hashing, aligning artifacts across workflows; blank values and normalization collisions fail early.</li>
+<li>Trimmed character combo boundaries before validation and hashing, aligning artifacts across workflows; normalization collisions fail early.</li>
 <li>Agent EDA summaries report absent outlier dates and omit non-finite regressor-lag correlations, keeping infinite values out of LLM context.</li>
 <li>Missing intermediate forecasts now explain incomplete or inconsistent runs and recommend restarting or regenerating the missing step.</li>
 <li>Validated custom <code>seasonal_period</code> values reach <code>stlm-arima</code>, <code>stlm-ets</code>, and <code>tbats</code>; default <code>NULL</code> remains logged as <code>NA</code>.</li>

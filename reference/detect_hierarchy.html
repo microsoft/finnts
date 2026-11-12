@@ -24,7 +24,7 @@ changing input data, running preprocessing, or saving artifacts."><meta property
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9020</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
       </span>
     </div>
 
@@ -158,11 +158,11 @@ Diagnostics are returned in memory only.</p>
     <h2>Details</h2>
     <p>Character and factor combo boundaries are trimmed using the same
 normalization as <code><a href="prep_data.html">prep_data()</a></code>. The caller's data is unchanged. Missing
-combo values, including numeric <code>NaN</code>, form an <code>"NA"</code> label, as in
-<code><a href="prep_data.html">prep_data()</a></code>. A column with both a missing value and the literal text
-<code>"NA"</code> (after trimming), or with both numeric <code>NA</code> and <code>NaN</code>, is ambiguous
-and produces an error.
-Blank, infinite, or unsupported combo labels, ambiguous <code>"--"</code>-joined
+combo values, including values left blank by trimming and numeric <code>NaN</code>,
+form an <code>"NA"</code> label, as in <code><a href="prep_data.html">prep_data()</a></code>. A column with both a missing or
+blank value and the literal text <code>"NA"</code> (after trimming), or with both
+numeric <code>NA</code> and <code>NaN</code>, is ambiguous and produces an error.
+Infinite or unsupported combo labels, ambiguous <code>"--"</code>-joined
 combo identities, invalid cleanup inputs, and an empty retained population
 produce errors.</p>
 <p>Levels are ordered by increasing distinct count, with supplied column order
