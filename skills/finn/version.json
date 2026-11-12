@@ -1,7 +1,14 @@
 {
-  "version": "0.3.5",
-  "released": "2026-11-11",
+  "version": "0.3.6",
+  "released": "2026-11-12",
   "changelog": [
+    {
+      "version": "0.3.6",
+      "date": "2026-11-12",
+      "changes": [
+        "After a standard hierarchy's parent groups change, restoring the groups now starts a fresh update instead of resuming the failed one, which kept its saved data."
+      ]
+    },
     {
       "version": "0.3.5",
       "date": "2026-11-11",

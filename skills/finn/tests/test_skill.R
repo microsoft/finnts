@@ -1428,9 +1428,11 @@ with(dx, {
   check("diagnose: temporary file lock still recommends resume",
     any(grepl("then resume", diagnose_match("Permission denied")$fix, fixed = TRUE)))
   parent_fix <- paste(diagnose_match("The standard hierarchy's parent groups changed")$fix, collapse = " ")
-  check("diagnose: parent-group changes offer restoring groups or a confirmed new Agent history",
+  check("diagnose: parent-group changes offer a fresh update after restoring groups or a confirmed new Agent history",
     grepl("restore the previous parent groups", parent_fix, fixed = TRUE) &&
-      grepl("--mode=iterate --new=true --confirm=true", parent_fix, fixed = TRUE))
+      grepl("--mode=update --new=true --confirm=true", parent_fix, fixed = TRUE) &&
+      grepl("--mode=iterate --new=true --confirm=true", parent_fix, fixed = TRUE) &&
+      isFALSE(diagnose_match("The standard hierarchy's parent groups changed")$resume))
   check("diagnose: no match returns NULL", is.null(diagnose_match("all good")) && is.null(diagnose_match("")))
   check("diagnose: every pattern is a valid regex", all(vapply(diagnose_patterns(), function(p) {
     !inherits(try(grepl(p$pattern, "x", perl = TRUE), silent = TRUE), "try-error") && length(p$fix) > 0
@@ -3437,6 +3439,16 @@ with(dx, {
   empty <- diagnose_run(list(), ep)
   efile <- diagnose_write_report(empty, ep)
   check("report: works for a project with no runs", file.exists(efile) && any(grepl("no_runs", readLines(efile, warn = FALSE))))
+
+  finn_update_state(finn_run_paths(lp, "r2"), run_id = "r2", mode = "update", status = "failed",
+    error = "Error in update_forecast(). The standard hierarchy's parent groups changed since Agent version 2.",
+    created_at = finn_now())
+  parent_res <- diagnose_run(list(run_id = "r2"), lp)
+  parent_steps <- paste(unlist(parent_res$next_actions), collapse = " ")
+  check("diagnose: parent-group changes start a fresh update instead of resuming the failed one",
+    identical(parent_res$data$category, "hierarchy_parents_changed") &&
+      grepl("--mode=update --new=true --confirm=true", parent_steps, fixed = TRUE) &&
+      !grepl("After fixing, resume", parent_steps, fixed = TRUE))
 })
 
 check("issue template exists", file.exists(file.path(skill_dir, "..", "..", ".github", "ISSUE_TEMPLATE", "finn-skill.yml")))

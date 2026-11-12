@@ -33,12 +33,14 @@
   - Previously reconciliation failed with `'i' and 'j' must not contain NA` after every model had trained.
   - Runs that already saved a hierarchy with missing labels need a new run or `overwrite = TRUE`.
 - Combo values that are blank after trimming whitespace are now treated as missing values instead of stopping preparation.
-  - Like other missing values, they form the `"NA"` label in series and hierarchy names (for example `North--NA` or `Site_NA`), so empty cells give the same result whichever file reader produced them.
+  - Like other missing values, they form the `"NA"` label in series and hierarchy names, such as `North--NA` or `Site_NA`.
+  - Empty cells now give the same result whichever file reader produced them.
   - `validate_prepared_input()` rule `R6` passes and names the affected columns; `detect_hierarchy()` accepts blanks too.
   - Numeric combo columns, targets and external regressors are unchanged, and existing series names do not change.
-- A combo column with both missing (or blank) values and the literal text `"NA"` now has a clear outcome for every forecast approach.
+- A combo column mixing missing or blank values with the literal text `"NA"` now has a clear outcome.
   - Bottoms-up forecasts warn and keep combining them into one series, as before.
-  - Standard hierarchies now stop with the error grouped hierarchies already raise, naming the column; previously some inputs failed later with an unclear `hts` error.
+  - Standard hierarchies now stop with the error grouped hierarchies already raise, naming the column.
+  - Previously some standard-hierarchy inputs failed later with an unclear `hts` error.
   - The duplicate-row error now also explains that blank, missing and `"NA"` values share one label.
 - Hierarchy-level external regressors now reach bottom series whose names start with a digit, such as numeric cost centers.
   - Previously these series silently received missing regressor values.
@@ -51,23 +53,29 @@
 - `get_agent_forecast()` reads the exact required final artifact and errors when it is missing.
   - Missing CSV forecasts no longer return an empty table; storage and read failures propagate.
 - Agent finalization preserves numeric-looking run identities and leading-zero series names when rewriting completion metadata.
-- Agent forecast updates now detect when a standard hierarchy's parent groups change so that an existing parent node name (`A`, `B`, `AA`, ...) would refer to a different group.
+- Agent forecast updates now detect when an existing standard-hierarchy parent name (`A`, `B`, `AA`, ...) refers to a different group.
   - Standard-hierarchy parents are named by position, so such updates could reuse another group's history or model choice.
   - Standard-hierarchy Agent versions stop with an error that lists the changed groups.
-  - In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates: within the failure limit (20% of series, at least 10) they get default forecasts; above it the update stops with the same explanation.
-  - Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally. Grouped hierarchies are unchanged.
-  - Replacing every bottom series within an unchanged parent is also supported; existing saved input values distinguish it from a reassigned parent name.
-  - Added or removed series that reorder the hierarchy levels (another column now has fewer distinct values) are detected from the same saved input values, which the error now shows for each changed group.
+  - In bottoms-up Agent versions, series from a standard-hierarchy global model count as failed updates.
+  - Within the failure limit (20% of series, at least 10) they get default forecasts.
+  - Above the limit, the update stops with the same explanation.
+  - Adding groups that sort after existing ones, or adding and removing series within a group, still updates normally.
+  - Grouped hierarchies are unchanged.
+  - Replacing every bottom series within an unchanged parent also works; saved input values tell it apart from a reassignment.
+  - Added or removed series that reorder the hierarchy levels are also detected from those saved input values.
+  - The error then shows each changed group's original column values.
   - Keep the same parent groups, or start a new history with `iterate_forecast()`.
 - Agent forecast updates without a completed earlier Agent version now explain what is missing.
-  - The error lists the run logs searched, how many versions were found, what each incomplete version lacks, and the next step: restore the Agent history or start a new one with `iterate_forecast()`.
+  - The error lists the run logs searched, versions found and what each incomplete version lacks.
+  - It suggests restoring the Agent history or starting a new one with `iterate_forecast()`.
   - Request-ID update setups stop before writing a new version; retrying the same request still resumes an interrupted update.
-  - Setup and update checks use the same completion rules: every required final output must contain rows, including the hierarchy summary when applicable.
+  - Setup and update checks share completion rules: every required final output, including any hierarchy summary, must have rows.
 - Agent run logs are always read as CSV with text `run_id` and `request_id`.
   - Projects saving parquet outputs now find their Agent history, and numeric-looking request IDs resume the right run.
   - Recording a request ID changes only that run's own log, adding no other columns.
-  - Custom-update marker writes also preserve exact request IDs, including leading zeros and values beyond numeric precision. Already-corrupted identifiers are not migrated.
-- finnts imports `%||%` from rlang, so code paths using it no longer fail on R versions before 4.4, which lack the base R operator.
+  - Custom-update marker writes also preserve exact request IDs, including leading zeros and values beyond numeric precision.
+  - Already-corrupted identifiers are not migrated.
+- finnts imports `%||%` from rlang, so code using it no longer fails on R versions before 4.4.
 - Croston now preserves historical actuals in backtests and downstream CSV outputs and model averages.
   - Negative targets are still clamped to zero for Croston training only.
 - Hierarchical external-regressor mapping requires one observed value per source grain/date instead of distinct-count reduction.
