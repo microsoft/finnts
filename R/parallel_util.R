@@ -517,23 +517,51 @@ cancel_parallel <- function(par_info) {
   try(foreach::registerDoSEQ(), silent = TRUE) # final safeguard
 }
 
+#' Arguments that reconnect Spark the way the user first connected
+#'
+#' sparklyr records `method = "gateway"` and a local `sparklyr://` master for
+#' connections opened with `method = "synapse"` or `"databricks"`; only the
+#' connection class keeps the platform. That gateway belongs to the backend
+#' `spark_disconnect()` stops, so these platforms reconnect through their own
+#' method and let it start a new backend. Other connections (for example
+#' `"shell"` with master `"yarn"`, or `"livy"`) keep their master, method,
+#' app name and Spark home. The original `config` is always kept.
+#'
+#' @param sc An open sparklyr connection.
+#' @return A named list of `sparklyr::spark_connect()` arguments.
+#' @noRd
+spark_reconnect_args <- function(sc) {
+  platforms <- c(synapse_connection = "synapse", databricks_connection = "databricks")
+  platform <- platforms[vapply(names(platforms), function(cls) inherits(sc, cls), logical(1))]
+  if (length(platform)) {
+    return(list(method = unname(platform[[1]]), config = sc$config))
+  }
+  list(
+    master = sc$master, method = sc$method %||% "shell", app_name = sc$app_name %||% "sparklyr",
+    version = sc$version, spark_home = sc$spark_home, config = sc$config
+  )
+}
+
+#' Disconnect and reconnect the global Spark connection `sc`
+#'
+#' Called at the start of every Spark `par_start()` stage and by
+#' `cancel_parallel()` after cancelling jobs, so each stage starts on a fresh
+#' Spark application. Reconnects with [spark_reconnect_args()] and replaces
+#' `sc` in the global environment, because finnts and doSpark look it up there.
+#' Errors if the new connection is not open.
+#'
+#' @return Invisible `NULL`; called for its side effect on the global `sc`.
+#' @noRd
 reset_spark <- function() {
-  # reset spark connection
-  conf <- sc$config
-  master <- sc$master
-  ver <- sc$version
-  spark_home <- sc$spark_home
+  args <- spark_reconnect_args(sc)
 
   sparklyr::spark_disconnect(sc)
 
-  fn_env <- .GlobalEnv
-
-  assign("sc", sparklyr::spark_connect(master = master, version = ver, spark_home = spark_home, config = conf),
-    envir = fn_env
-  )
+  assign("sc", do.call(sparklyr::spark_connect, args), envir = .GlobalEnv)
 
   # check spark session is running
   if (!sparklyr::connection_is_open(sc)) {
     stop("Spark session is not open")
   }
+  invisible(NULL)
 }

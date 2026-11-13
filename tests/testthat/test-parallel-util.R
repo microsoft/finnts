@@ -305,6 +305,74 @@ test_that("spark_inner_cores sizes only automatic inner pools on Spark", {
   expect_null(spark_inner_cores(NULL, "spark", TRUE))
 })
 
+# Build a fake sparklyr connection holding the fields reset_spark() reads.
+# `class` adds the platform subclass sparklyr gives Synapse and Databricks
+# connections; those record method "gateway" and a local gateway master.
+parallel_util_fake_sc <- function(method, master, class = character()) {
+  structure(
+    list(
+      method = method, master = master, app_name = "finn_app",
+      config = list(spark.executor.cores = "2"), spark_home = "/opt/spark"
+    ),
+    class = c("spark_connection", class, "spark_shell_connection", "DBIConnection")
+  )
+}
+
+# Run reset_spark() on `old_sc` with sparklyr's connect, disconnect and
+# open-check mocked. Restores any global `sc` afterwards and returns the
+# arguments reset_spark() passed to sparklyr::spark_connect().
+parallel_util_reset_args <- function(old_sc) {
+  testthat::skip_if_not_installed("sparklyr")
+  had_sc <- exists("sc", envir = .GlobalEnv, inherits = FALSE)
+  previous <- if (had_sc) get("sc", envir = .GlobalEnv)
+  withr::defer(if (had_sc) {
+    assign("sc", previous, envir = .GlobalEnv)
+  } else if (exists("sc", envir = .GlobalEnv, inherits = FALSE)) {
+    rm("sc", envir = .GlobalEnv)
+  })
+  assign("sc", old_sc, envir = .GlobalEnv)
+
+  connect_args <- NULL
+  testthat::local_mocked_bindings(
+    spark_disconnect = function(sc, ...) invisible(NULL),
+    spark_connect = function(...) {
+      connect_args <<- list(...)
+      "new connection"
+    },
+    connection_is_open = function(sc) TRUE,
+    .package = "sparklyr"
+  )
+  reset_spark()
+  expect_identical(get("sc", envir = .GlobalEnv), "new connection")
+  connect_args
+}
+
+test_that("reset_spark reconnects Synapse and Databricks through their own method", {
+  gateway <- "sparklyr://localhost:8880/8880"
+  for (platform in c("synapse", "databricks")) {
+    old_sc <- parallel_util_fake_sc("gateway", gateway,
+      class = c(paste0(platform, "_connection"), "spark_gateway_connection"))
+    args <- parallel_util_reset_args(old_sc)
+    expect_identical(args$method, platform)
+    expect_identical(args$config, old_sc$config)
+    expect_null(args$master)
+  }
+})
+
+test_that("reset_spark keeps the method, master and settings of other connections", {
+  old_sc <- parallel_util_fake_sc("shell", "yarn")
+  args <- parallel_util_reset_args(old_sc)
+  expect_identical(args$method, "shell")
+  expect_identical(args$master, "yarn")
+  expect_identical(args$spark_home, "/opt/spark")
+  expect_identical(args$app_name, "finn_app")
+  expect_identical(args$config, old_sc$config)
+
+  livy <- parallel_util_reset_args(parallel_util_fake_sc("livy", "http://livy:8998"))
+  expect_identical(livy$method, "livy")
+  expect_identical(livy$master, "http://livy:8998")
+})
+
 test_that("an inner pool scope applies its core budget to automatic requests only", {
   skip_on_cran()
   skip_if(parallel::detectCores() < 4, "Three local workers are required")

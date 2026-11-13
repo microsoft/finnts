@@ -28,9 +28,10 @@
   - The caller's `future` plan is restored when each step finishes or is cancelled.
   - When series run one after another, worker processes now start once and are reused instead of restarting per series.
   - Pools are sized to the available work and respect `num_cores` and container CPU limits.
-  - On Spark, each series still starts its own pool, reused across its Agent iterations.
+  - On Spark, each series starts one pool, shared by its feature selection, training and Agent iterations.
   - On Spark, each series' inner workers share its executor node's cores; see the parallel processing vignette.
 - Simple model averages are computed up to 50 times faster, with identical results.
+- `prep_data()` on Spark no longer preps partial series to infer its output columns, skipping one Spark job.
 
 ## Bug Fixes
 
@@ -108,6 +109,13 @@
 -   Replaced deprecated `dials::grid_latin_hypercube()` and timetk rolling-window calls that relied on deprecated `purrr::cross_df()`.
   -   Prepared features and ensemble grids are unchanged, except with `num_hyperparameters = 1`, where ensembles pick their setting like individual models.
     -   Results remain reproducible for a given seed.
+-   Fixed `prep_data()` on Spark failing at its final step when `stationary` or `box_cox` is on.
+  -   The default `stationary = TRUE` was affected; Agent workflows were not.
+-   Spark step reconnects now reuse the original connection method, such as `"synapse"` or `"databricks"`, and app name.
+-   C1 source fingerprints from Spark-table input now match local input, so prep no longer reports false source changes.
+  -   Standard C1 runs first prepped from a Spark table before this fix need a new run.
+-   `get_forecast_data()` and `final_models()` no longer fail on Parquet runs with model averages; saved files are unchanged.
+-   Parquet outputs no longer fail on Windows when `final_models()` rewrites forecasts it just read.
 
 ## Breaking Changes
 

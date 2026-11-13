@@ -415,7 +415,9 @@ train_models <- function(run_info,
     .export = c("list_files", "safe_dir_ls"),
     .noexport = NULL
   ) %op%
-    {
+    # a Spark task trains one series; its feature selection and training share
+    # one inner pool (sequential runs already share the scope opened above)
+    with_inner_pool({
       # get time series
       combo_hash <- x
 
@@ -944,7 +946,7 @@ train_models <- function(run_info,
       }
 
       return(data.frame(Combo_Hash = combo_hash))
-    } %>%
+    }, active = inner_parallel && identical(parallel_processing, "spark"), cores = inner_num_cores) %>%
     base::suppressPackageStartupMessages()
 
   # clean up any parallel run process

@@ -768,9 +768,7 @@ read_file <- function(run_info,
   if (return_type == "df") {
     switch(file_ext,
       rds = files %>% purrr::map_dfr(readRDS),
-      parquet = files %>% purrr::map_dfr(function(path) {
-        arrow::read_parquet(path)
-      }),
+      parquet = files %>% purrr::map_dfr(read_parquet_artifact),
       csv = tryCatch(
         {
           col_types <- if (length(character_columns) > 0L) {
@@ -870,6 +868,30 @@ read_file <- function(run_info,
   } else if (return_type == "object") {
     readRDS(files)
   }
+}
+
+#' Read one Parquet artifact into memory
+#'
+#' Reads without memory-mapping: a mapped file stays open until R garbage
+#' collects the result, and Windows refuses to overwrite an open mapped file,
+#' which `final_models()` does when it rewrites the forecasts it just read.
+#' Simple-average forecasts save `Hyperparameter_ID` as the text `"NA"`, while
+#' model forecasts save numbers; Parquet keeps the text type, so such text is
+#' converted to numbers with `"NA"` as missing, matching what CSV reads return
+#' and letting model and average forecasts combine. Saved files are unchanged.
+#'
+#' @param path Local path of a Parquet file.
+#'
+#' @return A tibble.
+#' @noRd
+read_parquet_artifact <- function(path) {
+  data <- arrow::read_parquet(path, mmap = FALSE)
+  if ("Hyperparameter_ID" %in% names(data) && is.character(data$Hyperparameter_ID)) {
+    ids <- data$Hyperparameter_ID
+    ids[ids %in% "NA"] <- NA_character_
+    data$Hyperparameter_ID <- as.numeric(ids)
+  }
+  data
 }
 
 download_exact_artifact <- function(storage_object, path, destination, allow_missing) {

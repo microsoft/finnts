@@ -266,3 +266,38 @@ test_that("strict CSV fallback keeps metadata exceptions as errors", {
     "Skipping empty or unreadable file")
   expect_equal(nrow(legacy), 0L)
 })
+
+test_that("a parquet artifact can be rewritten while its read result is still in use", {
+  # final_models() reads a series' forecasts and rewrites the same file; a
+  # memory-mapped read kept the file open and Windows refused the rewrite.
+  skip_if_not_installed("arrow")
+  run_info <- artifact_test_run(withr::local_tempdir(), "parquet")
+  artifact_test_forecast(run_info)
+  path <- artifact_test_path(run_info, "forecasts", "A", "-single_models")
+  forecast <- read_file(run_info, file_list = path)
+  forecast$Best_Model <- "No"
+
+  expect_no_error(write_data(forecast, "A", run_info, "data", "forecasts", "-single_models"))
+  expect_identical(read_file(run_info, file_list = path)$Best_Model, "No")
+})
+
+test_that("parquet forecast reads combine model and simple-average files like CSV", {
+  skip_if_not_installed("arrow")
+  ids <- list()
+  for (format in c("csv", "parquet")) {
+    run_info <- artifact_test_run(withr::local_tempdir(), format)
+    artifact_test_forecast(run_info)
+    # simple-average forecasts save Hyperparameter_ID as the text "NA"
+    average <- artifact_test_forecast(run_info, write_output = FALSE)
+    average$Model_ID <- "meanf--local--R1_naive--local--R1"
+    average$Hyperparameter_ID <- "NA"
+    write_data(average, "A", run_info, "data", "forecasts", "-average_models")
+    forecasts <- read_file(run_info, path = paste0("/forecasts/*", hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "*models.", format))
+    ids[[format]] <- forecasts$Hyperparameter_ID[order(forecasts$Model_ID)]
+  }
+
+  expect_type(ids$parquet, "double")
+  expect_identical(ids$parquet, c(1, NA))
+  expect_identical(ids$parquet, ids$csv)
+})

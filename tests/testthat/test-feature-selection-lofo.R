@@ -99,6 +99,71 @@ test_that("train_models passes inner_parallel through to LOFO", {
   expect_identical(unlist(cores), c(2, 2))
 })
 
+test_that("a Spark task shares one inner pool between LOFO and training", {
+  skip_on_cran()
+  for (package in c("vip", "Boruta", "corrr", "ranger")) skip_if_not_installed(package)
+  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(
+    file.exists(file.path(namespace_path, "Meta", "package.rds")),
+    "Inner PSOCK workers are verified from the installed namespace"
+  )
+  withr::local_envvar(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
+  old_plan <- future::plan(future::sequential)
+  withr::defer(future::plan(old_plan))
+  dates <- seq(as.Date("2017-01-01"), by = "month", length.out = 48)
+  input <- data.frame(Date = dates, id = "A", value = 500 + seq_along(dates) + 20 * sin(seq_along(dates)))
+
+  pools <- 0
+  real_make_pool <- par_make_pool
+  real_par_start <- par_start
+  # Spark runs each series' task body in place on an executor; %do% does the
+  # same here, so pools started inside the body are the ones a task starts.
+  # Feature selection is replaced by a stub that opens its inner pool the way
+  # LOFO does and keeps every predictor, so only pool reuse is measured.
+  testthat::local_mocked_bindings(
+    check_parallel_processing = function(...) invisible(NULL),
+    par_make_pool = function(...) {
+      pools <<- pools + 1
+      real_make_pool(...)
+    },
+    par_start = function(run_info, parallel_processing, num_cores, task_length, inner = FALSE) {
+      if (identical(parallel_processing, "spark")) {
+        return(list(packages = NULL, foreach_operator = foreach::`%do%`, cl = NULL, parallel_processing = "spark"))
+      }
+      real_par_start(run_info, parallel_processing, num_cores, task_length, inner)
+    },
+    run_feature_selection = function(input_data, run_info, train_test_data, parallel_processing = NULL,
+                                     num_cores = NULL, forecast_horizon, ...) {
+      info <- par_start(run_info, parallel_processing, num_cores, task_length = 10, inner = TRUE)
+      par_end(info$cl)
+      features <- setdiff(names(input_data), c("Combo", "Target", "Date"))
+      stats::setNames(list(features), paste0("model_lag_", forecast_horizon))
+    }
+  )
+
+  forecasts <- list()
+  for (inner_parallel in c(FALSE, TRUE)) {
+    info <- set_run_info(
+      project_name = "lofo-spark", run_name = paste0("inner_", inner_parallel),
+      path = withr::local_tempdir(), data_output = "csv", object_output = "rds", add_unique_id = FALSE
+    )
+    prep_data(info, input,
+      combo_variables = "id", target_variable = "value", date_type = "month", forecast_horizon = 3,
+      recipes_to_run = "R1", stationary = FALSE, box_cox = FALSE, clean_missing_values = FALSE, clean_outliers = FALSE
+    )
+    prep_models(info, models_to_run = "glmnet", run_ensemble_models = FALSE, back_test_scenarios = 1, num_hyperparameters = 1)
+    pools <- 0
+    train_models(info, feature_selection = TRUE, inner_parallel = inner_parallel, num_cores = 2, parallel_processing = "spark")
+    expect_identical(pools, as.numeric(inner_parallel))
+    file <- list.files(file.path(info$path, "forecasts"), pattern = "-single_models", full.names = TRUE)
+    forecasts[[length(forecasts) + 1]] <- utils::read.csv(file)
+  }
+
+  expect_equal(forecasts[[2]], forecasts[[1]])
+  expect_true(inherits(future::plan(), "sequential"))
+})
+
 test_that("LOFO sizes its inner pool from the caller's num_cores", {
   skip_if_not_installed("xgboost")
   fixture <- lofo_fixture()

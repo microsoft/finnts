@@ -550,6 +550,10 @@ prep_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
+    # an explicit schema skips sparklyr's schema inference, which runs this
+    # function on a sample of partial series and writes their prep files
+    result_columns <- prep_spark_result_columns(box_cox, stationary, clean_outliers)
+
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(
@@ -738,8 +742,10 @@ prep_data <- function(run_info,
             )
           }
 
-          return(data.frame(return_tbl))
+          # the worker prepends Combo and maps columns to the schema by position
+          return(data.frame(return_tbl)[setdiff(names(result_columns), "Combo")])
         },
+        columns = result_columns,
         group_by = "Combo",
         context = list(
           external_regressors = external_regressors,
@@ -776,9 +782,11 @@ prep_data <- function(run_info,
           stationary = stationary,
           make_stationary = make_stationary,
           apply_box_cox = apply_box_cox,
-          global_xregs_future_list = global_xregs_future_list
+          global_xregs_future_list = global_xregs_future_list,
+          result_columns = result_columns
         )
-      )
+      ) %>%
+      dplyr::collect()
   }
 
   # check if all time series combos ran correctly
@@ -1006,8 +1014,12 @@ custom_input_columns <- function(data, target_variable) {
 }
 
 # Hash original C1 input deterministically before any completed-run shortcut.
-# Both backends hash the same per-series map; Spark collects only that small map.
-# Sorted rows/columns make input ordering irrelevant; no artifacts are written.
+# Both backends hash the same per-series map of Combo and source_id; Spark
+# collects only that small map. Its grouped worker prepends Combo to each
+# result, so the Spark function returns only source_id under an explicit
+# schema; returning Combo as well would add a duplicate column and change the
+# fingerprint. Sorted rows/columns make input ordering irrelevant; no artifacts
+# are written.
 custom_source_identity <- function(data) {
   hash_panel <- function(data) {
     data <- as.data.frame(data)[, sort(names(data)), drop = FALSE]
@@ -1019,10 +1031,11 @@ custom_source_identity <- function(data) {
   environment(hash_panel) <- baseenv()
   if (inherits(data, "tbl_spark")) {
     hash_group <- function(df, context) {
-      data.frame(Combo = unique(df$Combo), source_id = context$hash_panel(df))
+      data.frame(source_id = context$hash_panel(df))
     }
     environment(hash_group) <- baseenv()
     hashes <- sparklyr::spark_apply(data, hash_group,
+      columns = list(Combo = "character", source_id = "character"),
       group_by = "Combo", context = list(hash_panel = hash_panel)) %>% dplyr::collect()
   } else {
     hashes <- dplyr::bind_rows(lapply(split(as.data.frame(data), data$Combo), function(panel) {
@@ -1479,6 +1492,41 @@ get_date_regex <- function(date_type) {
   )
 
   return(date_regex)
+}
+
+#' Spark output schema for prep_data()'s per-series transformation table
+#'
+#' Passed to `sparklyr::spark_apply()` so Spark skips schema inference, which
+#' would run the prep function on a sample of partial series and write their
+#' prep files. The grouped worker prepends the group column (`Combo`) to each
+#' result and maps columns to this schema by position, so the schema starts
+#' with `Combo` and the prep function must return the remaining columns in this
+#' order. The columns match the local path's `-orig_combo_info` table:
+#' `Combo`, `Combo_Hash`, the Box-Cox lambda when `box_cox`, and the Target
+#' differencing values when `stationary`. `Target_Original` differencing values
+#' are added only with `clean_outliers`, the only setting that creates
+#' `Target_Original` (see [clean_outliers_missing_values()]).
+#'
+#' @param box_cox logical; Box-Cox transformation on
+#' @param stationary logical; differencing on
+#' @param clean_outliers logical; outlier cleaning on
+#'
+#' @return Named list of Spark column types, in output order.
+#' @noRd
+prep_spark_result_columns <- function(box_cox, stationary, clean_outliers) {
+  columns <- list(Combo = "character", Combo_Hash = "character")
+  if (box_cox) {
+    columns$Box_Cox_Lambda <- "double"
+  }
+  if (stationary) {
+    columns$Diff_Value1 <- "double"
+    columns$Diff_Value2 <- "double"
+    if (clean_outliers) {
+      columns$Target_Original_Diff_Value1 <- "double"
+      columns$Target_Original_Diff_Value2 <- "double"
+    }
+  }
+  columns
 }
 
 #' Apply Box‑Cox transformation

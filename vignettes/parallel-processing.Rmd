@@ -53,12 +53,8 @@ To leverage the full power of Finn, running within Azure is the best choice in b
 library(finnts)
 library(sparklyr)
 
-install.packages("qs")
-library(qs)
-
 # connect to spark cluster
 options(sparklyr.log.console = TRUE)
-options(sparklyr.spark_apply.serializer = "qs") # uses the qs package to improve data serialization before sending to spark cluster
 
 sc <- sparklyr::spark_connect(method = "databricks")
 
@@ -93,7 +89,22 @@ finn_output_tbl <- get_forecast_data(
 )
 ```
 
-The above example runs each time series on a separate core on a spark cluster. You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set `inner_parallel` to TRUE in `forecast_time_series()`.
+The above example runs each time series on a separate core on a spark cluster. On an Azure Synapse Spark pool, connect to the pool's Spark installation instead, and give `set_run_info()` a path under your ADLS mount, which starts with `/synfs`:
+
+```{r, message = FALSE, eval = FALSE}
+sc <- sparklyr::spark_connect(
+  master = "yarn",
+  version = "3.5",
+  spark_home = "/opt/spark",
+  config = sparklyr::spark_config()
+)
+```
+
+Finn reconnects to Spark at the start of each Spark step, reusing the connection's method and configuration. By default sparklyr then copies the driver's R packages to the executors again before the step's first task. When every executor already has the same R package library as the driver, such as a Synapse Spark pool or a Databricks cluster with the packages installed on the pool or cluster, you can skip that copy by adding `config$sparklyr.apply.packages <- FALSE` to the connection config. Keep the default when executors may be missing packages, because their tasks would fail when loading Finn.
+
+Spark 3.5 works with sparklyr 1.8.6, the version installed on Synapse Spark 3.5 pools. Spark 4 needs sparklyr 1.9.1 or later.
+
+You can also submit multiple time series where each time series runs on a separate spark executor (VM) and then leverage the cores on that executor to run things like hyperparameter tuning or model refitting in parallel. This creates two levels of parallelization. One at the time series level, then another when doing things like hyperparameter tuning within a specific time series. To do that set `inner_parallel` to TRUE in `forecast_time_series()`.
 
 Spark runs `spark.executor.cores` time series at once on each executor (divided by `spark.task.cpus` when that is set). It doesn't limit the cores an R process can use, so when `num_cores` is NULL, Finn gives each time series an equal share of the executor node's cores, minus one for the series itself. On 32-core nodes, `spark.executor.cores` set to 1 gives each series about 31 inner workers, and 2 gives two series about 15 workers each. Use 1 for heavy work within each series, such as large hyperparameter grids, many back tests or feature selection, and 2 or more to run more series at once. If `spark.executor.cores` isn't set (Databricks runs one series per core by default), there are no spare cores and each series uses a single inner worker. Set it with the "spark.executor.cores" argument when configuring your spark connection, using [sparklyr](https://spark.posit.co/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below.) or the cluster manager within the Azure resource. This sizing assumes one executor per node and a driver with the same node size as the executors; otherwise set `num_cores` in `forecast_time_series()` to the number of inner workers each series should use.
 

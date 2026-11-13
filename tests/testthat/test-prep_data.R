@@ -174,3 +174,78 @@ test_that("clean_outliers keeps future Target_Original NA so future Target is no
   future_assessment <- rsample::assessment(resamples$splits[[1]])
   expect_true(all(is.na(future_assessment$Target)))
 })
+
+# Stand-in for sparklyr::spark_apply() in prep_data() tests: computes the
+# grouped worker's result with spark_apply_grouped_result() and wraps it in a
+# lazy stand-in that only dplyr::collect() turns into a data frame, like a
+# Spark table. Stores the `columns` argument in `calls`.
+prep_data_emulate_spark_apply <- function(calls) {
+  function(x, f, columns = NULL, group_by = NULL, context = NULL, ...) {
+    calls$columns <- columns
+    structure(list(data = spark_apply_grouped_result(x, f, columns, group_by, context)),
+      class = "prep_data_fake_sdf")
+  }
+}
+
+# Run prep_data() on two trending monthly series with the given settings,
+# sequentially or through the emulated Spark branch, in its own temporary
+# folder. Returns the saved "-orig_combo_info" table sorted by Combo, with the
+# emulated spark_apply() `columns` argument as attribute "spark_columns".
+prep_data_orig_combo_info <- function(spark, data_output, box_cox, stationary, clean_outliers) {
+  dates <- seq.Date(as.Date("2022-01-01"), as.Date("2024-12-01"), by = "month")
+  set.seed(11)
+  data_tbl <- tibble::tibble(
+    id = rep(c("A", "B"), each = length(dates)),
+    Date = rep(dates, 2),
+    value = c(100 + 8 * seq_along(dates), 500 + 15 * seq_along(dates)) + stats::rnorm(2 * length(dates), 0, 3)
+  )
+  path <- tempfile("prep-spark-")
+  run_info <- set_run_info(path = path, data_output = data_output)
+  calls <- new.env()
+
+  if (spark) {
+    testthat::skip_if_not_installed("sparklyr")
+    vctrs::s3_register("dplyr::collect", "prep_data_fake_sdf", function(x, ...) x$data)
+    before <- ls(.GlobalEnv, all.names = TRUE)
+    withr::defer(rm(list = setdiff(ls(.GlobalEnv, all.names = TRUE), before), envir = .GlobalEnv))
+    assign("sc", structure(list(), class = "spark_connection"), envir = .GlobalEnv)
+    testthat::local_mocked_bindings(
+      check_parallel_processing = function(...) invisible(NULL),
+      adjust_df = function(input_data, return_type = "df") input_data
+    )
+    testthat::local_mocked_bindings(spark_apply = prep_data_emulate_spark_apply(calls), .package = "sparklyr")
+  }
+
+  prep_data(
+    run_info = run_info, input_data = data_tbl, combo_variables = "id", target_variable = "value",
+    date_type = "month", forecast_horizon = 3, recipes_to_run = "R1", box_cox = box_cox,
+    stationary = stationary, clean_outliers = clean_outliers,
+    parallel_processing = if (spark) "spark" else NULL
+  )
+
+  file <- list.files(file.path(path, "prep_data"), pattern = "-orig_combo_info", full.names = TRUE)
+  info <- if (data_output == "parquet") as.data.frame(arrow::read_parquet(file)) else utils::read.csv(file)
+  info <- info[order(info$Combo), , drop = FALSE]
+  rownames(info) <- NULL
+  structure(info, spark_columns = calls$columns)
+}
+
+test_that("Spark prep_data saves the same transformation table as the local path", {
+  settings <- list(
+    list(data_output = "csv", box_cox = TRUE, stationary = TRUE, clean_outliers = FALSE),
+    list(data_output = "parquet", box_cox = FALSE, stationary = TRUE, clean_outliers = TRUE)
+  )
+  for (setting in settings) {
+    label <- paste(names(setting), unlist(setting), sep = "=", collapse = ", ")
+    local <- do.call(prep_data_orig_combo_info, c(list(spark = FALSE), setting))
+    spark <- do.call(prep_data_orig_combo_info, c(list(spark = TRUE), setting))
+
+    spark_columns <- attr(spark, "spark_columns")
+    expect_identical(names(spark_columns), names(local), info = label)
+    expect_identical(spark_columns$Combo, "character", info = label)
+    expect_identical(names(spark), names(local), info = label)
+    numeric_cols <- setdiff(names(local), c("Combo", "Combo_Hash"))
+    as_numbers <- function(x) dplyr::mutate(x, dplyr::across(dplyr::all_of(numeric_cols), as.numeric))
+    expect_equal(as_numbers(structure(spark, spark_columns = NULL)), as_numbers(local), info = label)
+  }
+})
