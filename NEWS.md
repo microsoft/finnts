@@ -116,6 +116,8 @@
   -   Standard C1 runs first prepped from a Spark table before this fix need a new run.
 -   `get_forecast_data()` and `final_models()` no longer fail on Parquet runs with model averages; saved files are unchanged.
 -   Parquet outputs no longer fail on Windows when `final_models()` rewrites forecasts it just read.
+-   On Synapse and Databricks mounts, outputs Spark tasks just wrote are re-read briefly instead of reported missing.
+  -   Avoids intermittent "missing a best model" and "No trained models found" Agent retries.
 
 ## Breaking Changes
 

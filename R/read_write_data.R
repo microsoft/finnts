@@ -136,32 +136,35 @@ get_forecast_data <- function(run_info,
     )
   }
 
-  forecast_tbl <- if (local_hierarchy) {
-    reconciled_files <- local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
-    read_local_artifacts(run_info, unique(c(
-      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-      reconciled_files
-    )))
-  } else if (provider_hierarchy) {
-    reconciled_files <- list_files(run_info$storage_object,
-      local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
-    if (inherits(run_info$storage_object, "ms_drive")) {
-      reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
-    }
-    read_exact_artifact(run_info, unique(c(
-      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-      reconciled_files
-    )))
-  } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
-    read_local_artifacts(run_info, condensed_files)
-  } else if (single_combo) {
-    read_file(run_info,
-      file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
+  # a finished Spark stage's forecasts can be stale on a mount; see read_settled()
+  forecast_tbl <- read_settled(function() {
+    if (local_hierarchy) {
+      reconciled_files <- local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
+      read_local_artifacts(run_info, unique(c(
+        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+        reconciled_files
+      )))
+    } else if (provider_hierarchy) {
+      reconciled_files <- list_files(run_info$storage_object,
+        local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
+      if (inherits(run_info$storage_object, "ms_drive")) {
+        reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
+      }
+      read_exact_artifact(run_info, unique(c(
+        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+        reconciled_files
+      )))
+    } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
+      read_local_artifacts(run_info, condensed_files)
+    } else if (single_combo) {
+      read_file(run_info,
+        file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
+      )
+    } else read_file(run_info,
+      path = fcst_path,
+      return_type = return_type
     )
-  } else read_file(run_info,
-    path = fcst_path,
-    return_type = return_type
-  )
+  }, best_models_complete, run_info$path, "final forecasts")
   forecast_tbl <- forecast_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
@@ -892,6 +895,75 @@ read_parquet_artifact <- function(path) {
     data$Hyperparameter_ID <- as.numeric(ids)
   }
   data
+}
+
+#' Waits before re-reading a Spark stage's output on mounted storage
+#'
+#' Synapse mounts ADLS through blobfuse with a 120-second file cache by
+#' default. After Spark executors create or overwrite a file, a node that looked
+#' up or read that path earlier can keep seeing it as missing or stale: 37-98
+#' seconds in the Phase 0 probe, over 180 seconds in runbook check A3. The waits
+#' back off so repeated lookups stay sparse, and total 195 seconds, longer than
+#' the cache. Databricks `/dbfs` is also a FUSE mount. Other paths, including
+#' local folders and storage objects read through their APIs, never wait.
+#'
+#' @param path Run or project `path`.
+#'
+#' @return Seconds to wait before each re-read; empty when re-reads are off.
+#' @noRd
+settle_waits <- function(path) {
+  if (is.character(path) && length(path) == 1L && grepl("^/(synfs|dbfs)/", path)) {
+    c(5, 10, 20, 40, 60, 60)
+  } else {
+    numeric()
+  }
+}
+
+# Per-process state of read_settled(): `active` is TRUE while a settled read
+# runs, so reads nested inside it run once.
+read_settled_state <- new.env(parent = emptyenv())
+
+#' Read a finished Spark stage's output until it is complete
+#'
+#' Calls `read()` and returns the value once `ready(value)` is `TRUE`. On
+#' mounted Spark storage (see [settle_waits()]), an incomplete value or a read
+#' error is read again after each wait, with one message, so a stale mount cache
+#' costs a short wait instead of a failed step or an Agent retry. Use it only for
+#' files a finished Spark stage wrote, never to probe a path workers may write
+#' later. Callers keep their own validation after this call: a value that is
+#' still incomplete is returned unchanged so the caller raises its usual error,
+#' and a read that still fails re-signals its last error. Elsewhere `read()`
+#' runs once with its errors unchanged. A `read_settled()` call inside another
+#' one's `read()` also runs once, so nested reads never multiply the waits.
+#'
+#' @param read Function with no arguments that reads and returns the value.
+#' @param ready Function of the value returning `TRUE` when it is complete;
+#'   an error counts as incomplete.
+#' @param path Run or project `path`; decides whether re-reads happen.
+#' @param what Short description of the artifact for the message.
+#'
+#' @return The first complete value, otherwise the last value read.
+#' @noRd
+read_settled <- function(read, ready, path, what) {
+  waits <- settle_waits(path)
+  if (!length(waits) || isTRUE(read_settled_state$active)) return(read())
+  read_settled_state$active <- TRUE
+  on.exit(read_settled_state$active <- FALSE, add = TRUE)
+  attempt <- function() tryCatch(read(), error = identity)
+  complete <- function(value) {
+    !inherits(value, "error") && isTRUE(tryCatch(ready(value), error = function(e) FALSE))
+  }
+  value <- attempt()
+  for (index in seq_along(waits)) {
+    if (complete(value)) break
+    if (index == 1L) {
+      message("Re-reading ", what, ": files just written by Spark tasks are not visible yet on the mounted storage.")
+    }
+    Sys.sleep(waits[[index]])
+    value <- attempt()
+  }
+  if (inherits(value, "error")) stop(value)
+  value
 }
 
 download_exact_artifact <- function(storage_object, path, destination, allow_missing) {

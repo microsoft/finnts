@@ -355,6 +355,38 @@ test_that("model summaries consolidate only expected combo artifacts", {
   expect_equal(tracker$listings, 0L)
 })
 
+test_that("model summaries re-read model and forecast files not yet visible on mounted storage", {
+  agent_info <- artifact_test_agent(withr::local_tempdir())
+  best_runs <- artifact_test_selected_models(agent_info)
+  local_artifact_summary_mocks(best_runs)
+  original_read <- read_file
+  failed <- character()
+  # Each series' model and forecast files fail on their first read, as on the
+  # Spark executor that reported "No trained models found" in runbook check A3.
+  testthat::local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    read_file = function(run_info, path = NULL, ...) {
+      if (!is.null(path) && grepl("-single_models.", path, fixed = TRUE) && !path %in% failed) {
+        failed <<- c(failed, path)
+        stop("cannot open file: not visible yet", call. = FALSE)
+      }
+      original_read(run_info, path = path, ...)
+    },
+    .package = "finnts"
+  )
+
+  messages <- character()
+  withCallingHandlers(summarize_models(agent_info), message = function(condition) {
+    messages <<- c(messages, conditionMessage(condition))
+    invokeRestart("muffleMessage")
+  })
+  expect_length(failed, 4L)
+  expect_identical(sum(grepl("^Re-reading (trained models|forecasts) for [AB]:", messages)), 4L)
+  result <- get_summarized_models(agent_info)
+  expect_setequal(result$Combo, c("A", "B"))
+  expect_true(all(result$Best_Model == "Yes"))
+})
+
 test_that("model summary consolidation fails on a missing expected write", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   best_runs <- artifact_test_selected_models(agent_info)

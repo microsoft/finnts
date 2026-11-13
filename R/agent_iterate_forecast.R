@@ -779,6 +779,9 @@ load_final_agent_artifact <- function(agent_info,
 #' load the best forecast for an agent before saving to disk
 #'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and prepares it before it writes to disk.
+#' On mounted Spark storage the read is repeated with [read_settled()] while it
+#' fails, because the final Spark stages' forecasts can be briefly invisible or
+#' stale there; its errors are unchanged.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param final_output If TRUE, formats the output for final saving. If FALSE, returns raw forecast data.
@@ -790,6 +793,22 @@ load_agent_forecast <- function(agent_info,
   # formatting checks
   check_agent_info(agent_info = agent_info)
 
+  read_settled(function() load_agent_forecast_once(agent_info, final_output),
+    function(forecasts) TRUE, agent_info$project_info$path, "final Agent forecasts")
+}
+
+#' Read and assemble the best Agent forecast once
+#'
+#' Body of [load_agent_forecast()]: reads the reconciled forecast, or each best
+#' run's global and local forecasts, and errors when a series or its best model
+#' is missing.
+#'
+#' @inheritParams load_agent_forecast
+#'
+#' @return A tibble containing the final forecast for the agent.
+#' @noRd
+load_agent_forecast_once <- function(agent_info,
+                                     final_output = FALSE) {
   # check for reconciled forecast and return if found
   if (agent_info$forecast_approach != "bottoms_up" & final_output) {
     project_info <- agent_info$project_info
@@ -2883,10 +2902,12 @@ log_best_run <- function(agent_info,
     }
 
     # get back test data
-    back_test_tbl <- load_combo_forecast(
-      combo = ifelse(combo == "all", "All-Data", combo),
-      run_info = run_info
-    )
+    back_test_tbl <- read_settled(function() {
+      load_combo_forecast(
+        combo = ifelse(combo == "all", "All-Data", combo),
+        run_info = run_info
+      )
+    }, best_models_complete, run_info$path, "selected forecasts")
 
     # validate that every combo has a best model
     validate_best_model(back_test_tbl, context = "log_best_run")

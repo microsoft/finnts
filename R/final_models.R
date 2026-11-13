@@ -913,9 +913,22 @@ final_models <- function(run_info,
       num_cores,
       custom_run = custom_run
     )
-    fcst_data <- read_reconciliation()
-    if (!complete_reconciled_forecast(fcst_data, run_info, prev_log_df,
-      model_train_test_tbl, weekly_to_daily, selection_cache)) {
+    # a finished Spark stage's reconciled forecasts can be stale on a mount (see
+    # read_settled()); the completeness check of the last read is kept so it
+    # isn't repeated
+    reconciled_complete <- NA
+    fcst_data <- read_settled(function() {
+      reconciled_complete <<- NA
+      read_reconciliation()
+    }, function(forecasts) {
+      reconciled_complete <<- complete_reconciled_forecast(forecasts, run_info, prev_log_df,
+        model_train_test_tbl, weekly_to_daily, selection_cache)
+    }, run_info$path, "reconciled forecasts")
+    if (is.na(reconciled_complete)) {
+      reconciled_complete <- complete_reconciled_forecast(fcst_data, run_info, prev_log_df,
+        model_train_test_tbl, weekly_to_daily, selection_cache)
+    }
+    if (!reconciled_complete) {
       stop("Reconciled forecasts are incomplete or invalid. Restore the selected source forecasts and retry final_models().",
         call. = FALSE)
     }
@@ -1266,6 +1279,35 @@ convert_weekly_to_daily <- function(fcst_tbl,
   return(final_tbl)
 }
 
+#' Combos without a selected best model
+#'
+#' @param forecast_tbl data frame (or Spark table) with Combo and Best_Model
+#'   columns
+#'
+#' @return Character vector of Combo values with no `Best_Model == "Yes"` row.
+#' @noRd
+missing_best_model_combos <- function(forecast_tbl) {
+  forecast_tbl %>%
+    dplyr::group_by(Combo) %>%
+    dplyr::summarise(has_best = any(Best_Model == "Yes", na.rm = TRUE), .groups = "drop") %>%
+    dplyr::filter(!has_best) %>%
+    dplyr::pull(Combo)
+}
+
+#' Check, without an error, that every combo has a best model
+#'
+#' Readiness test for [read_settled()]: the same rule as
+#' [validate_best_model()], which still raises the error after the read.
+#'
+#' @param forecast_tbl data frame (or Spark table) of forecasts
+#'
+#' @return `TRUE` when a Best_Model column exists and every combo has a
+#'   `Best_Model == "Yes"` row, otherwise `FALSE`.
+#' @noRd
+best_models_complete <- function(forecast_tbl) {
+  "Best_Model" %in% colnames(forecast_tbl) && !length(missing_best_model_combos(forecast_tbl))
+}
+
 #' Validate that every combo has at least one Best_Model = "Yes"
 #'
 #' @param forecast_tbl data frame with Combo and Best_Model columns
@@ -1281,11 +1323,7 @@ validate_best_model <- function(forecast_tbl, context = "forecast") {
     )
   }
 
-  combos_missing <- forecast_tbl %>%
-    dplyr::group_by(Combo) %>%
-    dplyr::summarise(has_best = any(Best_Model == "Yes", na.rm = TRUE), .groups = "drop") %>%
-    dplyr::filter(!has_best) %>%
-    dplyr::pull(Combo)
+  combos_missing <- missing_best_model_combos(forecast_tbl)
 
   if (length(combos_missing) > 0) {
     stop(

@@ -829,31 +829,39 @@ reconcile_hierarchical_data <- function(run_info,
     if (condensed) condensed_files else list_files(NULL, fs::path(run_info$path, fcst_path))
   }
 
-  unreconciled_tbl <- if (spark_run) {
-    read_file(run_info,
-      path = fcst_path, file_list = forecast_files, return_type = "arrow",
-      schema = hierarchy_forecast_schema()
+  # a finished Spark stage's forecasts can be stale on a mount; see read_settled()
+  forecasts <- read_settled(function() {
+    unreconciled_tbl <- if (spark_run) {
+      read_file(run_info,
+        path = fcst_path, file_list = forecast_files, return_type = "arrow",
+        schema = hierarchy_forecast_schema()
+      )
+    } else if (condensed && is.null(run_info$storage_object) &&
+      run_info$data_output %in% c("csv", "parquet", "rds")) {
+      read_local_artifacts(run_info, condensed_files)
+    } else read_file(run_info,
+      path = fcst_path,
+      return_type = "df"
     )
-  } else if (condensed && is.null(run_info$storage_object) &&
-    run_info$data_output %in% c("csv", "parquet", "rds")) {
-    read_local_artifacts(run_info, condensed_files)
-  } else read_file(run_info,
-    path = fcst_path,
-    return_type = "df"
-  )
-  unreconciled_tbl <- unreconciled_tbl %>%
-    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+    unreconciled_tbl <- unreconciled_tbl %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
-  # One small model/node index serves the enrollment guard, the model list and
-  # the best-model check, so lazy forecasts are not rescanned for each.
-  forecast_index <- if (is.null(custom_run)) {
-    unreconciled_tbl %>%
-      dplyr::select(dplyr::any_of(c("Model_ID", "Model_Name", "Combo", "Best_Model"))) %>%
-      dplyr::distinct() %>%
-      dplyr::collect()
-  } else {
-    custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
-  }
+    # One small model/node index serves the enrollment guard, the model list and
+    # the best-model check, so lazy forecasts are not rescanned for each.
+    forecast_index <- if (is.null(custom_run)) {
+      unreconciled_tbl %>%
+        dplyr::select(dplyr::any_of(c("Model_ID", "Model_Name", "Combo", "Best_Model"))) %>%
+        dplyr::distinct() %>%
+        dplyr::collect()
+    } else {
+      custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
+    }
+    list(unreconciled_tbl = unreconciled_tbl, forecast_index = forecast_index)
+  }, function(forecasts) best_models_complete(forecasts$forecast_index), run_info$path, "forecasts to reconcile")
+  unreconciled_tbl <- forecasts$unreconciled_tbl
+  forecast_index <- forecasts$forecast_index
+  # doSpark serializes this frame for its tasks; keep one copy of the forecasts
+  rm(forecasts)
   if (is.null(custom_run) && any(grepl("^custom-[a-f0-9]{64}--", forecast_index$Model_ID))) {
     stop("Custom hierarchy requires validated enrollment before reconciliation.", call. = FALSE)
   }

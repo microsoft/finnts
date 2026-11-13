@@ -301,3 +301,93 @@ test_that("parquet forecast reads combine model and simple-average files like CS
   expect_identical(ids$parquet, c(1, NA))
   expect_identical(ids$parquet, ids$csv)
 })
+
+test_that("settled reads wait only on mounted Spark storage", {
+  expect_length(settle_waits(tempdir()), 0L)
+  expect_length(settle_waits(NULL), 0L)
+  for (path in c("/synfs/notebook/1/mount/project", "/dbfs/mnt/project")) {
+    # must outlast Synapse's default 120-second mount file cache
+    expect_gt(sum(settle_waits(path)), 120)
+  }
+  calls <- 0L
+  expect_silent(result <- read_settled(function() {
+    calls <<- calls + 1L
+    "stale"
+  }, function(value) FALSE, tempdir(), "forecasts"))
+  expect_identical(result, "stale")
+  expect_identical(calls, 1L)
+})
+
+test_that("settled reads retry stale values and read errors, then keep the caller's error", {
+  testthat::local_mocked_bindings(settle_waits = function(path) c(0, 0, 0))
+  values <- list(simpleError("not visible yet"), "stale", "fresh")
+  calls <- 0L
+  read <- function() {
+    calls <<- calls + 1L
+    value <- values[[calls]]
+    if (inherits(value, "error")) stop(value)
+    value
+  }
+  expect_message(result <- read_settled(read, function(value) identical(value, "fresh"),
+    "/synfs/mount/project", "forecasts"), "Re-reading forecasts")
+  expect_identical(result, "fresh")
+  expect_identical(calls, 3L)
+
+  calls <- 0L
+  result <- suppressMessages(read_settled(function() {
+    calls <<- calls + 1L
+    "stale"
+  }, function(value) FALSE, "/synfs/mount/project", "forecasts"))
+  expect_identical(result, "stale")
+  expect_identical(calls, 4L)
+
+  failure <- structure(class = c("finnts_test_storage_error", "error", "condition"),
+    list(message = "still missing", call = NULL))
+  expect_error(suppressMessages(read_settled(function() stop(failure), function(value) TRUE,
+    "/synfs/mount/project", "forecasts")), class = "finnts_test_storage_error")
+
+  # a nested settled read runs once; the enclosing one owns the waits
+  inner_calls <- 0L
+  outer_calls <- 0L
+  expect_error(suppressMessages(read_settled(function() {
+    outer_calls <<- outer_calls + 1L
+    read_settled(function() {
+      inner_calls <<- inner_calls + 1L
+      stop("still missing")
+    }, function(value) TRUE, "/synfs/mount/project", "inner forecasts")
+  }, function(value) TRUE, "/synfs/mount/project", "outer forecasts")), "still missing")
+  expect_identical(c(outer_calls, inner_calls), c(4L, 4L))
+  expect_silent(read_settled(function() "fresh", function(value) TRUE, "/synfs/mount/project", "forecasts"))
+})
+
+test_that("get_forecast_data re-reads forecasts that are stale on mounted storage", {
+  run_info <- artifact_test_run(withr::local_tempdir())
+  artifact_test_log(run_info, combo_variables = "ID", forecast_approach = "bottoms_up")
+  artifact_test_splits(run_info)
+  artifact_test_forecast(run_info, "A")
+  artifact_test_forecast(run_info, "B")
+  original_read <- read_file
+  stale_reads <- 1L
+  reads <- 0L
+  # The first reads return the copy saved before final selection set Best_Model.
+  testthat::local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    read_file = function(run_info, path = NULL, ...) {
+      data <- original_read(run_info, path = path, ...)
+      if (!is.null(path) && grepl("models.", path, fixed = TRUE)) {
+        reads <<- reads + 1L
+        if (reads <= stale_reads) data$Best_Model <- "No"
+      }
+      data
+    }
+  )
+
+  expect_message(result <- get_forecast_data(run_info), "Re-reading")
+  expect_identical(reads, 2L)
+  expect_setequal(result$Combo[result$Best_Model == "Yes"], c("A", "B"))
+
+  stale_reads <- Inf
+  reads <- 0L
+  expect_error(suppressMessages(get_forecast_data(run_info)), "missing a best model")
+  expect_identical(reads, 3L)
+})

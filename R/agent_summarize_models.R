@@ -587,73 +587,40 @@ summarize_models <- function(agent_info,
         hash_combo
       )
 
-      # Get trained models for this time series
-      trained_models_tbl <- tryCatch(
-        {
-          read_file(project_info,
-            path = paste0(
-              "/models/", hash_data(project_name), "-", hash_data(run_name), "-",
-              model_hash_combo, "-single_models.", project_info$object_output
+      # Get trained models for this time series. A finished Spark stage's files
+      # can be briefly invisible on a mount, so they're re-read there while
+      # missing; see read_settled()
+      trained_models_tbl <- read_settled(function() {
+        tryCatch(
+          {
+            read_file(project_info,
+              path = paste0(
+                "/models/", hash_data(project_name), "-", hash_data(run_name), "-",
+                model_hash_combo, "-single_models.", project_info$object_output
+              )
             )
-          )
-        },
-        error = function(e) {
-          return(tibble::tibble())
-        }
-      )
+          },
+          error = function(e) {
+            return(tibble::tibble())
+          }
+        )
+      }, function(models) nrow(models) > 0, project_info$path, paste("trained models for", combo))
 
       if (nrow(trained_models_tbl) == 0) {
         stop(paste0("No trained models found for combo: ", combo, "."), call. = FALSE)
       }
 
-      # Get forecast data to identify best models by reading specific files directly
-      if (model_type == "global") {
-        # Try to read global models forecast file
-        forecast_tbl <- tryCatch(
-          {
-            read_file(project_info,
-              path = paste0(
-                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-                forecast_hash_combo, "-global_models.", project_info$data_output
-              )
-            ) %>%
-              adjust_combo_column()
-          },
-          error = function(e) {
-            return(tibble::tibble())
-          }
-        ) %>%
-          suppressWarnings()
-
-        # Also try to read average models forecast file
-        average_forecast_tbl <- tryCatch(
-          {
-            read_file(project_info,
-              path = paste0(
-                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-                forecast_hash_combo, "-average_models.", project_info$data_output
-              )
-            ) %>%
-              adjust_combo_column()
-          },
-          error = function(e) {
-            return(tibble::tibble())
-          }
-        ) %>%
-          suppressWarnings()
-
-        # Combine global and average forecast data; skip empty files whose
-        # columns are untyped (e.g. header-only average files from updates)
-        forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(forecast_tbl, average_forecast_tbl)))
-
-        # if no data, try reading a reconciled forecast file
-        if (nrow(forecast_tbl) == 0) {
+      # Get forecast data to identify best models by reading specific files
+      # directly; re-read like the models above while none are visible
+      forecast_tbl <- read_settled(function() {
+        if (model_type == "global") {
+          # Try to read global models forecast file
           forecast_tbl <- tryCatch(
             {
               read_file(project_info,
                 path = paste0(
                   "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-                  hash_data("Best-Model"), "-reconciled.", project_info$data_output
+                  forecast_hash_combo, "-global_models.", project_info$data_output
                 )
               ) %>%
                 adjust_combo_column()
@@ -663,48 +630,89 @@ summarize_models <- function(agent_info,
             }
           ) %>%
             suppressWarnings()
+
+          # Also try to read average models forecast file
+          average_forecast_tbl <- tryCatch(
+            {
+              read_file(project_info,
+                path = paste0(
+                  "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                  forecast_hash_combo, "-average_models.", project_info$data_output
+                )
+              ) %>%
+                adjust_combo_column()
+            },
+            error = function(e) {
+              return(tibble::tibble())
+            }
+          ) %>%
+            suppressWarnings()
+
+          # Combine global and average forecast data; skip empty files whose
+          # columns are untyped (e.g. header-only average files from updates)
+          forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(forecast_tbl, average_forecast_tbl)))
+
+          # if no data, try reading a reconciled forecast file
+          if (nrow(forecast_tbl) == 0) {
+            forecast_tbl <- tryCatch(
+              {
+                read_file(project_info,
+                  path = paste0(
+                    "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                    hash_data("Best-Model"), "-reconciled.", project_info$data_output
+                  )
+                ) %>%
+                  adjust_combo_column()
+              },
+              error = function(e) {
+                return(tibble::tibble())
+              }
+            ) %>%
+              suppressWarnings()
+          }
+        } else {
+          # Try to read local models forecast file
+          local_forecast_tbl <- tryCatch(
+            {
+              read_file(project_info,
+                path = paste0(
+                  "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                  forecast_hash_combo, "-single_models.", project_info$data_output
+                )
+              ) %>%
+                adjust_combo_column()
+            },
+            error = function(e) {
+              return(tibble::tibble())
+            }
+          ) %>%
+            suppressWarnings()
+
+          # Try to read average models forecast file
+          average_forecast_tbl <- tryCatch(
+            {
+              read_file(project_info,
+                path = paste0(
+                  "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
+                  forecast_hash_combo, "-average_models.", project_info$data_output
+                )
+              ) %>%
+                adjust_combo_column()
+            },
+            error = function(e) {
+              return(tibble::tibble())
+            }
+          ) %>%
+            suppressWarnings()
+
+          # Combine all forecast data, skipping empty files with untyped columns
+          forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(
+            local_forecast_tbl,
+            average_forecast_tbl
+          )))
         }
-      } else {
-        # Try to read local models forecast file
-        local_forecast_tbl <- tryCatch(
-          {
-            read_file(project_info,
-              path = paste0(
-                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-                forecast_hash_combo, "-single_models.", project_info$data_output
-              )
-            ) %>%
-              adjust_combo_column()
-          },
-          error = function(e) {
-            return(tibble::tibble())
-          }
-        ) %>%
-          suppressWarnings()
-
-        # Try to read average models forecast file
-        average_forecast_tbl <- tryCatch(
-          {
-            read_file(project_info,
-              path = paste0(
-                "/forecasts/", hash_data(project_name), "-", hash_data(run_name), "-",
-                forecast_hash_combo, "-average_models.", project_info$data_output
-              )
-            ) %>%
-              adjust_combo_column()
-          },
-          error = function(e) {
-            return(tibble::tibble())
-          }
-        ) %>%
-          suppressWarnings()
-
-        # Combine all forecast data, skipping empty files with untyped columns
-        forecast_tbl <- dplyr::bind_rows(Filter(nrow, list(
-          local_forecast_tbl,
-          average_forecast_tbl
-        )))
-      }
+        forecast_tbl
+      }, function(forecasts) nrow(forecasts) > 0, project_info$path, paste("forecasts for", combo))
 
       if (nrow(forecast_tbl) == 0) {
         stop(paste0("No forecast data found to determine best models for combo: ", combo), call. = FALSE)
