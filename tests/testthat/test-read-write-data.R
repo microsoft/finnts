@@ -367,11 +367,17 @@ test_that("get_forecast_data re-reads forecasts that are stale on mounted storag
   artifact_test_forecast(run_info, "A")
   artifact_test_forecast(run_info, "B")
   original_read <- read_file
-  stale_reads <- 1L
+  original_dir_ls <- safe_dir_ls
+  stale_reads <- 0L
   reads <- 0L
+  listings <- 0L
   # The first reads return the copy saved before final selection set Best_Model.
   testthat::local_mocked_bindings(
     settle_waits = function(path) c(0, 0),
+    safe_dir_ls = function(...) {
+      listings <<- listings + 1L
+      original_dir_ls(...)
+    },
     read_file = function(run_info, path = NULL, ...) {
       data <- original_read(run_info, path = path, ...)
       if (!is.null(path) && grepl("models.", path, fixed = TRUE)) {
@@ -381,13 +387,22 @@ test_that("get_forecast_data re-reads forecasts that are stale on mounted storag
       data
     }
   )
+  get_forecast_data(run_info)
+  fresh_listings <- listings
 
+  stale_reads <- 1L
+  reads <- 0L
+  listings <- 0L
   expect_message(result <- get_forecast_data(run_info), "Re-reading")
   expect_identical(reads, 2L)
   expect_setequal(result$Combo[result$Best_Model == "Yes"], c("A", "B"))
+  # re-reads reuse the forecast files listed before the first read
+  expect_identical(listings, fresh_listings)
 
   stale_reads <- Inf
   reads <- 0L
+  listings <- 0L
   expect_error(suppressMessages(get_forecast_data(run_info)), "missing a best model")
   expect_identical(reads, 3L)
+  expect_identical(listings, fresh_listings)
 })

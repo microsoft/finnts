@@ -2277,7 +2277,7 @@ test_that("reconciliation weights reject unusable matrices and identify invalid 
 # fixtures retain earlier revenue but have zero backtest targets and tiny
 # nonzero predictions for one bottom node; all stored identities stay unchanged.
 reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE,
-                                     discontinued = FALSE) {
+                                     discontinued = FALSE, forecast_suffix = "-condensed") {
   run_info <- artifact_test_run(path)
   dates <- as.Date(c("2024-01-01", "2024-02-01", "2024-03-01"))
   bottom <- matrix(c(10, 20, 30, 40, 12, 22, 32, 42, 14, 24, 34, 44), nrow = 3, byrow = TRUE)
@@ -2310,7 +2310,7 @@ reconciliation_test_case <- function(path, forecast_approach, extreme = FALSE,
     history <- dplyr::bind_rows(history,
       tibble::tibble(Combo = "A", Date = as.Date("2023-12-01"), Target = 10))
   }
-  write_data(forecast, "batch", run_info, "data", "forecasts", "-condensed")
+  write_data(forecast, "batch", run_info, "data", "forecasts", forecast_suffix)
   write_data(splits, NULL, run_info, "data", "prep_models", "-train_test_split")
   write_data(history, NULL, run_info, "data", "prep_data", "-hts_data")
   write_data(list(nodes = nodes, original_combos = colnames(bottom), hts_combos = combos),
@@ -2549,6 +2549,44 @@ test_that("reconciliation weight failures retain optional and required model han
     date_type = "month", num_cores = 1), "snaive.*invalid residual node"), "Best-Model.*invalid residual node")
   expect_error(reconcile(dplyr::left_join(fixture$forecast, fixture$splits, by = "Train_Test_ID"),
     fixture$run_info, "standard_hierarchy", FALSE), "Best-Model.*invalid residual node")
+})
+
+test_that("mounted reconciliation re-reads forecasts without listing them again", {
+  fixture <- reconciliation_test_case(withr::local_tempdir(), "standard_hierarchy",
+    forecast_suffix = "-single_models")
+  original_read <- read_file
+  original_dir_ls <- safe_dir_ls
+  stale_reads <- 0L
+  reads <- 0L
+  listings <- 0L
+  testthat::local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    safe_dir_ls = function(...) {
+      listings <<- listings + 1L
+      original_dir_ls(...)
+    },
+    read_file = function(run_info, path = NULL, ...) {
+      data <- original_read(run_info, path = path, ...)
+      if (!is.null(path) && grepl("*models.", path, fixed = TRUE)) {
+        reads <<- reads + 1L
+        if (reads <= stale_reads) data$Best_Model <- "No"
+      }
+      data
+    },
+    .package = "finnts"
+  )
+  reconcile_hierarchical_data(fixture$run_info, NULL, "standard_hierarchy", date_type = "month", num_cores = 1)
+  fresh_listings <- listings
+
+  stale_reads <- 1L
+  reads <- 0L
+  listings <- 0L
+  expect_message(reconcile_hierarchical_data(fixture$run_info, NULL, "standard_hierarchy",
+    date_type = "month", num_cores = 1), "Re-reading forecasts to reconcile")
+  expect_identical(reads, 2L)
+  expect_identical(listings, fresh_listings)
+  expect_true(file.exists(artifact_test_path(fixture$run_info, "forecasts", "Best-Model", "-reconciled")))
 })
 
 reconciliation_test_solve <- function(forecasts, residuals, nodes = NULL, groups = NULL,

@@ -842,6 +842,86 @@ test_that("Agent forecast loading does not require an ineligible average artifac
   expect_true(all(result$Best_Model == "Yes"))
 })
 
+test_that("Agent forecast re-reads on mounted storage list best runs once", {
+  fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
+  rows <- dplyr::bind_rows(fixture$backtests, fixture$forecasts) %>%
+    dplyr::mutate(Combo = "series", Combo_ID = Combo, Hyperparameter_ID = 1,
+      Best_Model = "Yes", Model_Name = "meanf", Model_Type = "local", Recipe_ID = "R1")
+  best_run <- data.frame(combo = "series", model_type = "local", best_run_name = "selected",
+    recipes_to_run = "R1", models_to_run = "meanf", average_models = FALSE)
+  listings <- 0L
+  forecast_reads <- 0L
+  local_mocked_bindings(
+    check_agent_info = function(...) NULL,
+    settle_waits = function(path) c(0, 0),
+    list_files = function(storage_object, path, ...) {
+      listings <<- listings + 1L
+      fs::path(tempdir(), "logs", "project-run-series-agent_best_run.csv")
+    },
+    read_file = function(run_info, file_list = NULL, path = NULL, ...) {
+      if (!is.null(path)) stop("expected exact file_list")
+      if (any(grepl("-agent_best_run", file_list, fixed = TRUE))) return(best_run)
+      if (any(grepl("-train_test_split", file_list, fixed = TRUE))) return(fixture$context$train_test_split)
+      forecast_reads <<- forecast_reads + 1L
+      # the first read returns the copy saved before final selection set Best_Model
+      if (forecast_reads == 1L) dplyr::mutate(rows, Best_Model = "No") else rows
+    }
+  )
+  agent <- list(run_id = "run", forecast_approach = "bottoms_up",
+    project_info = list(project_name = "project", path = tempdir(), data_output = "csv", combo_variables = "Series"))
+  expect_message(result <- load_agent_forecast(agent), "Re-reading final Agent forecasts")
+  expect_identical(listings, 1L)
+  expect_identical(forecast_reads, 2L)
+  expect_true(all(result$Best_Model == "Yes"))
+})
+
+test_that("logging an all-series best run lists its forecasts once when they are re-read", {
+  run_info <- artifact_test_run(withr::local_tempdir())
+  artifact_test_log(run_info, combo_variables = "ID", forecast_approach = "bottoms_up")
+  artifact_test_splits(run_info)
+  artifact_test_forecast(run_info, "A")
+  artifact_test_forecast(run_info, "B")
+  original_read <- read_file
+  original_dir_ls <- safe_dir_ls
+  original_validate <- validate_best_model
+  stale_reads <- 0L
+  reads <- 0L
+  listings <- 0L
+  local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    get_run_info = function(...) tibble::tibble(),
+    safe_dir_ls = function(...) {
+      listings <<- listings + 1L
+      original_dir_ls(...)
+    },
+    read_file = function(run_info, path = NULL, ...) {
+      data <- original_read(run_info, path = path, ...)
+      if (!is.null(path) && grepl("models.", path, fixed = TRUE)) {
+        reads <<- reads + 1L
+        if (reads <= stale_reads) data$Best_Model <- "No"
+      }
+      data
+    },
+    # stop once the back tests are read; logging itself is covered elsewhere
+    validate_best_model = function(forecast_tbl, context = "forecast") {
+      if (identical(context, "log_best_run")) stop("back tests read", call. = FALSE)
+      original_validate(forecast_tbl, context)
+    }
+  )
+  agent <- list(project_info = run_info, run_id = "agent", agent_version = 1,
+    forecast_approach = "bottoms_up")
+  expect_error(log_best_run(agent, run_info, 0.1, check_best_run = FALSE), "back tests read")
+  fresh_listings <- listings
+
+  stale_reads <- 1L
+  reads <- 0L
+  listings <- 0L
+  expect_error(suppressMessages(log_best_run(agent, run_info, 0.1, check_best_run = FALSE)),
+    "back tests read")
+  expect_identical(reads, 2L)
+  expect_identical(listings, fresh_listings)
+})
+
 for (provider in c("blob_container", "ms_drive")) {
   test_that(paste("Agent loading reads required splits and missing optional averages on", provider), {
     fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))

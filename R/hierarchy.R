@@ -822,14 +822,14 @@ reconcile_hierarchical_data <- function(run_info,
     )
   }
 
-  # Path-based Spark runs discover forecast files once and share the list with
-  # every task. Provider-backed runs download per task because driver temp files
-  # are not visible to Spark workers.
-  forecast_files <- if (spark_run && is.null(run_info$storage_object) && !is.null(run_info$path)) {
+  # Path-based runs discover forecast files once: Spark tasks share the list and
+  # mounted re-reads (see read_settled()) reuse it. Provider-backed runs download
+  # per task because driver temp files are not visible to Spark workers.
+  forecast_files <- if (is.null(run_info$storage_object) && !is.null(run_info$path)) {
     if (condensed) condensed_files else list_files(NULL, fs::path(run_info$path, fcst_path))
   }
 
-  # a finished Spark stage's forecasts can be stale on a mount; see read_settled()
+  # a finished Spark stage's forecasts can be stale on a mount; only the read repeats
   forecasts <- read_settled(function() {
     unreconciled_tbl <- if (spark_run) {
       read_file(run_info,
@@ -841,6 +841,7 @@ reconcile_hierarchical_data <- function(run_info,
       read_local_artifacts(run_info, condensed_files)
     } else read_file(run_info,
       path = fcst_path,
+      file_list = forecast_files,
       return_type = "df"
     )
     unreconciled_tbl <- unreconciled_tbl %>%

@@ -136,35 +136,47 @@ get_forecast_data <- function(run_info,
     )
   }
 
-  # a finished Spark stage's forecasts can be stale on a mount; see read_settled()
-  forecast_tbl <- read_settled(function() {
-    if (local_hierarchy) {
-      reconciled_files <- local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
-      read_local_artifacts(run_info, unique(c(
-        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-        reconciled_files
-      )))
-    } else if (provider_hierarchy) {
-      reconciled_files <- list_files(run_info$storage_object,
-        local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
-      if (inherits(run_info$storage_object, "ms_drive")) {
-        reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
-      }
-      read_exact_artifact(run_info, unique(c(
-        local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-        reconciled_files
-      )))
-    } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
-      read_local_artifacts(run_info, condensed_files)
-    } else if (single_combo) {
+  # Files are listed once before reading: a finished Spark stage's forecasts can
+  # be stale on a mount, and read_settled() then repeats only the read below.
+  read_forecasts <- if (local_hierarchy) {
+    reconciled_files <- unique(c(
+      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+      local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
+    ))
+    function() read_local_artifacts(run_info, reconciled_files)
+  } else if (provider_hierarchy) {
+    reconciled_files <- list_files(run_info$storage_object,
+      local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
+    if (inherits(run_info$storage_object, "ms_drive")) {
+      reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
+    }
+    reconciled_files <- unique(c(
+      local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
+      reconciled_files
+    ))
+    function() read_exact_artifact(run_info, reconciled_files)
+  } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
+    function() read_local_artifacts(run_info, condensed_files)
+  } else if (single_combo) {
+    function() {
       read_file(run_info,
         file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
       )
-    } else read_file(run_info,
-      path = fcst_path,
-      return_type = return_type
-    )
-  }, best_models_complete, run_info$path, "final forecasts")
+    }
+  } else {
+    # the same listing read_file() would run; provider runs still download per read
+    forecast_files <- if (is.null(run_info$storage_object) && !is.null(run_info$path)) {
+      list_files(NULL, fs::path(run_info$path, fcst_path))
+    }
+    function() {
+      read_file(run_info,
+        path = fcst_path,
+        file_list = forecast_files,
+        return_type = return_type
+      )
+    }
+  }
+  forecast_tbl <- read_settled(read_forecasts, best_models_complete, run_info$path, "final forecasts")
   forecast_tbl <- forecast_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
@@ -932,9 +944,11 @@ read_settled_state <- new.env(parent = emptyenv())
 #' files a finished Spark stage wrote, never to probe a path workers may write
 #' later. Callers keep their own validation after this call: a value that is
 #' still incomplete is returned unchanged so the caller raises its usual error,
-#' and a read that still fails re-signals its last error. Elsewhere `read()`
-#' runs once with its errors unchanged. A `read_settled()` call inside another
-#' one's `read()` also runs once, so nested reads never multiply the waits.
+#' and a read that still fails re-signals its last error. List unknown file
+#' names before calling it so `read()` repeats only reads, never listings.
+#' Elsewhere `read()` runs once with its errors unchanged. A `read_settled()`
+#' call inside another one's `read()` also runs once, so nested reads never
+#' multiply the waits.
 #'
 #' @param read Function with no arguments that reads and returns the value.
 #' @param ready Function of the value returning `TRUE` when it is complete;
