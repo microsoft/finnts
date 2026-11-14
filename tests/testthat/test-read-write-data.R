@@ -267,6 +267,22 @@ test_that("strict CSV fallback keeps metadata exceptions as errors", {
   expect_equal(nrow(legacy), 0L)
 })
 
+test_that("CSV fallback combines files with different columns and keeps mixed columns as text", {
+  directory <- withr::local_tempdir()
+  run_info <- artifact_test_run(directory)
+  paths <- fs::path(directory, c("first.csv", "second.csv"))
+  utils::write.csv(data.frame(Combo = "A", Value = 1.5, Note = NA), paths[[1]], row.names = FALSE)
+  utils::write.csv(data.frame(Combo = "B", Value = "high", Extra = 2L), paths[[2]], row.names = FALSE)
+  testthat::local_mocked_bindings(
+    vroom = function(...) stop("injected CSV read failure", call. = FALSE),
+    .package = "vroom"
+  )
+
+  expect_identical(read_file(run_info, file_list = paths), tibble::tibble(
+    Combo = c("A", "B"), Value = c("1.5", "high"), Note = c(NA, NA), Extra = c(NA, 2L)
+  ))
+})
+
 test_that("a parquet artifact can be rewritten while its read result is still in use", {
   # final_models() reads a series' forecasts and rewrites the same file; a
   # memory-mapped read kept the file open and Windows refused the rewrite.

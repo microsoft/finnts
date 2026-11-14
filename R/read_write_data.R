@@ -845,7 +845,7 @@ read_file <- function(run_info,
               )
             }) %>%
             purrr::compact() %>% # Remove NULL/empty results
-            plyr::rbind.fill() %>%
+            bind_rows_fill() %>%
             tibble::tibble()
         }
       ),

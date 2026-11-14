@@ -32,6 +32,7 @@
   - On Spark, each series' inner workers share its executor node's cores; see the parallel processing vignette.
 - Simple model averages are computed up to 50 times faster, with identical results.
 - `prep_data()` on Spark no longer preps partial series to infer its output columns, skipping one Spark job.
+- Drops the `plyr` and `gtools` dependencies; average model IDs and combined CSV reads are unchanged.
 
 ## Bug Fixes
 
@@ -125,6 +126,7 @@
   -   Adds `future`, `future.apply` and `parallelly` imports; all were already installed through existing dependencies.
   -   Forecasts may shift once when upgrading from tune 1.x, because tune 2.x seeds resampling differently.
   -   Upgrade Spark cluster libraries to these versions before installing this finnts version.
+-   Custom models may declare `future`, `future.apply` and `parallelly`, but no longer `plyr` or `gtools`; re-register any that did.
 
 # finnts 0.7.0
 

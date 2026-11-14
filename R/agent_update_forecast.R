@@ -763,7 +763,7 @@ load_update_runs <- function(agent_info) {
     if (!nrow(record)) stop("Empty current best-run metadata: ", path, call. = FALSE)
     record
   })
-  metadata <- plyr::rbind.fill(rows)
+  metadata <- bind_rows_fill(rows)
   validate_global_iteration(metadata)
   metadata
 }

@@ -363,10 +363,7 @@ averaging_reference <- function(predictions_tbl, model_ids, max_model_average) {
     return(NULL)
   }
   combos <- unlist(lapply(2:min(length(model_ids), max_model_average), function(number) {
-    temp <- data.frame(gtools::combinations(v = model_ids, n = length(model_ids), r = number))
-    temp %>%
-      tidyr::unite(Model_Combo, colnames(temp)) %>%
-      dplyr::pull(Model_Combo)
+    utils::combn(sort(model_ids), number, FUN = paste, collapse = "_")
   }))
   suppressMessages(dplyr::bind_rows(lapply(combos, function(x) {
     model_list <- strsplit(x, "_")[[1]]
@@ -384,6 +381,16 @@ averaging_reference <- function(predictions_tbl, model_ids, max_model_average) {
 averaging_run_info <- function() {
   list(storage_object = NULL, path = tempdir(), data_output = "csv", object_output = "rds")
 }
+
+test_that("model average IDs list sorted members in lexicographic combination order", {
+  # saved average Model_IDs depend on this order
+  ids <- c("snaive--local--R1", "arima--local--R1", "ets--local--R2")
+  pairs <- c("arima--local--R1_ets--local--R2", "arima--local--R1_snaive--local--R1",
+    "ets--local--R2_snaive--local--R1")
+  expect_identical(model_average_combinations(ids, 2), pairs)
+  expect_identical(model_average_combinations(rev(ids), 3),
+    c(pairs, "arima--local--R1_ets--local--R2_snaive--local--R1"))
+})
 
 test_that("grouped model averages are bit-identical to the per-combination loop", {
   predictions <- averaging_predictions(models = 4)

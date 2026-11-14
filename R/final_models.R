@@ -1004,9 +1004,11 @@ final_models <- function(run_info,
 
 #' Simple model-average combinations for one series
 #'
-#' Every combination of 2 up to `max_model_average` eligible models, in the
-#' order `gtools::combinations()` gives (sorted IDs), with members joined by
-#' `"_"`. Model IDs never contain `"_"`, so the label also lists its members.
+#' Every combination of 2 up to `max_model_average` eligible models, in
+#' lexicographic order of the sorted IDs (the order `gtools::combinations()`
+#' gave before), with members joined by `"_"`. Saved average Model_IDs depend
+#' on this order. Model IDs never contain `"_"`, so the label also lists its
+#' members.
 #'
 #' @param model_ids Eligible model IDs.
 #' @param max_model_average Largest number of models in one average.
@@ -1014,9 +1016,9 @@ final_models <- function(run_info,
 #' @return Character vector of combination IDs.
 #' @noRd
 model_average_combinations <- function(model_ids, max_model_average) {
+  model_ids <- sort(unique(model_ids))
   unlist(lapply(2:min(length(model_ids), max_model_average), function(number) {
-    members <- gtools::combinations(v = model_ids, n = length(model_ids), r = number)
-    apply(members, 1, paste, collapse = "_")
+    utils::combn(model_ids, number, FUN = paste, collapse = "_")
   }))
 }
 

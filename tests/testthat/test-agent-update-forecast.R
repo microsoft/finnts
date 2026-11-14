@@ -247,6 +247,30 @@ test_that("current update metadata preserves identifiers with one base CSV read"
   expect_identical(tools::md5sum(path), before)
 })
 
+test_that("current update metadata combines best-run logs with different columns", {
+  fixture <- make_csv_update_fixture(withr::local_tempdir(), "0012345678901234")
+  log_info <- fixture$previous$project_info
+  log_info$run_name <- fixture$previous$run_id
+  first <- fixture$metadata
+  first$note <- NA
+  second <- fixture$metadata
+  second$combo <- "00043"
+  second$note <- "text"
+  second$extra <- 2.5
+  utils::write.csv(first, local_artifact_path(log_info, "logs", "-agent_best_run", hash_data(fixture$combo)),
+    row.names = FALSE)
+  utils::write.csv(second, local_artifact_path(log_info, "logs", "-agent_best_run", hash_data("00043")),
+    row.names = FALSE)
+
+  metadata <- load_update_runs(fixture$previous)
+  metadata <- metadata[order(metadata$combo), ]
+  expect_identical(class(metadata), "data.frame")
+  expect_identical(metadata$combo, c(fixture$combo, "00043"))
+  expect_identical(metadata$weighted_mape, c(0.125, 0.125))
+  expect_identical(metadata$note, c(NA, "text"))
+  expect_identical(metadata$extra, c(NA, 2.5))
+})
+
 test_that("exact CSV reads forward identity types without extra storage operations", {
   for (provider in c("local", "staged")) {
     for (backend in c("vroom", "fallback")) local({

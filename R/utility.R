@@ -80,6 +80,37 @@ xgb_get_feature_names <- function(model) {
   )
 }
 
+#' Row-bind data frames, filling missing columns
+#'
+#' Replaces `plyr::rbind.fill()` for the base-R data frames finnts reads from
+#' CSV files, where a column can be logical, integer, double or text and can be
+#' missing from some files. Columns keep their first-appearance order and are
+#' `NA` where a table lacks them. A column that is text in any table becomes
+#' text everywhere, as rbind.fill's assignment did, because
+#' `dplyr::bind_rows()` refuses to combine text with numbers; logical, integer
+#' and double columns combine as numbers. Numbers become text with
+#' `as.character()`, matching rbind.fill's values.
+#'
+#' @param tables List of data frames; `NULL` elements are dropped.
+#'
+#' @return The single remaining table unchanged, `NULL` when none remain,
+#'   otherwise one data frame (a tibble only when the first table is one).
+#' @noRd
+bind_rows_fill <- function(tables) {
+  tables <- Filter(Negate(is.null), tables)
+  if (!length(tables)) return(NULL)
+  if (length(tables) == 1L) return(tables[[1]])
+  columns <- unique(unlist(lapply(tables, names), use.names = FALSE))
+  text <- columns[vapply(columns, function(column) {
+    any(vapply(tables, function(table) is.character(table[[column]]), logical(1)))
+  }, logical(1))]
+  tables <- lapply(tables, function(table) {
+    for (column in intersect(text, names(table))) table[[column]] <- as.character(table[[column]])
+    table
+  })
+  dplyr::bind_rows(tables)
+}
+
 
 # The functions below define the model information. These access the model
 # environment inside of parsnip so they have to be executed once parsnip has
