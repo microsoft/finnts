@@ -119,6 +119,8 @@
 -   Parquet outputs no longer fail on Windows when `final_models()` rewrites forecasts it just read.
 -   On Synapse and Databricks mounts, outputs Spark tasks just wrote are re-read briefly instead of reported missing.
   -   Avoids intermittent "missing a best model" and "No trained models found" Agent retries.
+-   Multistep glmnet, xgboost, cubist, mars and svm models now train when finnts is loaded but not attached.
+  -   Previously they were silently dropped, for example in `finnts::` calls or background jobs.
 
 ## Breaking Changes
 

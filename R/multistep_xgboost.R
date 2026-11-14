@@ -3,7 +3,9 @@
 #' Initialize custom xgboost parsnip model
 #'
 #' Declares finnts as an engine dependency so tune loads it, and with it this
-#' engine registration, on every parallel worker before fitting.
+#' engine registration, on every parallel worker before fitting. The fit
+#' function is registered with its package, so parsnip finds it where finnts is
+#' loaded but not attached (Spark workers, background jobs, finnts:: callers).
 #'
 #' @return NA
 #' @noRd
@@ -138,7 +140,7 @@ make_xgboost_multistep <- function() {
     value = list(
       interface = "data.frame",
       protect   = c("x", "y"),
-      func      = c(fun = "xgboost_multistep_fit_impl"),
+      func      = c(pkg = "finnts", fun = "xgboost_multistep_fit_impl"),
       defaults  = list(objective = "reg:squarederror", nthread = 1, verbose = 0)
     )
   )
