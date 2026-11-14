@@ -298,10 +298,43 @@ par_pool_alive <- function(cl) {
   ))
 }
 
+#' Start a PSOCK cluster on a free port, retrying port clashes
+#'
+#' `parallel` picks one random port per R process from 11000-11999, so Spark
+#' tasks on one node can pick the same port and the later pool fails to open
+#' it. Each attempt instead takes a port `parallelly::freePort()` finds free in
+#' that range (or `R_PARALLEL_PORT` when set), without using the random-number
+#' stream, so seeded runs are unchanged and same-seed tasks get different
+#' ports. Only a port that can't be opened (an error from `serverSocket()`) is
+#' retried, on a new port; other start-up errors are raised unchanged.
+#'
+#' @param size Number of workers.
+#' @param attempts Maximum number of ports to try.
+#'
+#' @return The PSOCK cluster. Errors with the last port error after `attempts`.
+#' @noRd
+par_make_cluster <- function(size, attempts = 3L) {
+  for (attempt in seq_len(attempts)) {
+    cl <- tryCatch(
+      parallel::makeCluster(size, port = parallelly::freePort(ports = "auto")),
+      error = function(e) e
+    )
+    if (!inherits(cl, "error")) {
+      return(cl)
+    }
+    call <- conditionCall(cl)
+    port_clash <- is.call(call) && identical(call[[1]], quote(serverSocket))
+    if (!port_clash || attempt == attempts) {
+      stop(cl)
+    }
+  }
+}
+
 #' Start a local PSOCK pool with finnts' worker packages attached
 #'
-#' On Synapse (`/synfs` paths) workers first receive the session's library
-#' paths so they find the same packages.
+#' The pool starts on a free port (see `par_make_cluster()`). On Synapse
+#' (`/synfs` paths) workers first receive the session's library paths so they
+#' find the same packages.
 #'
 #' @param run_info Run info; `path` decides the Synapse library export.
 #' @param size Number of workers.
@@ -310,7 +343,7 @@ par_pool_alive <- function(cl) {
 #' @return The PSOCK cluster.
 #' @noRd
 par_make_pool <- function(run_info, size, packages) {
-  cl <- parallel::makeCluster(size)
+  cl <- par_make_cluster(size)
 
   if (substr(run_info$path, start = 1, stop = 6) == "/synfs") {
     # make sure libraries are exported properly in Azure Synapse

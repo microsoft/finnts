@@ -282,6 +282,60 @@ test_that("inner pools outside a scope are started and stopped per call", {
   expect_true(inherits(future::plan(), "sequential"))
 })
 
+# Hold a free local port open, as a pool another Spark task started on the
+# same node would, and make parallelly::freePort() offer that port first. With
+# `then_free`, later calls offer a port that is free; otherwise the held port
+# again. Both last until the calling test ends. Returns an environment whose
+# `busy` is the held port and `calls` counts freePort() calls.
+parallel_util_port_clash <- function(then_free = FALSE, env = parent.frame()) {
+  state <- new.env()
+  state$busy <- parallelly::freePort(ports = "auto")
+  state$calls <- 0L
+  socket <- serverSocket(state$busy)
+  withr::defer(close(socket), envir = env)
+  offers <- c(state$busy, if (then_free) parallelly::freePort(ports = "auto"))
+  testthat::local_mocked_bindings(
+    freePort = function(...) {
+      state$calls <- state$calls + 1L
+      offers[[min(state$calls, length(offers))]]
+    },
+    .package = "parallelly", .env = env
+  )
+  state
+}
+
+test_that("a pool retries a port another task holds without using the random stream", {
+  skip_on_cran()
+  parallel_util_light_pools()
+  clash <- parallel_util_port_clash(then_free = TRUE)
+
+  set.seed(42)
+  seed <- .Random.seed
+  cl <- par_make_pool(parallel_util_run_info(), size = 1, packages = character())
+  withr::defer(parallel::stopCluster(cl))
+
+  expect_identical(clash$calls, 2L)
+  expect_equal(unlist(parallel::clusterEvalQ(cl, 1)), 1)
+  expect_identical(.Random.seed, seed)
+})
+
+test_that("a pool raises other start-up errors without retrying", {
+  skip_on_cran()
+  clash <- parallel_util_port_clash()
+  expect_error(par_make_pool(parallel_util_run_info(), size = 0, packages = character()), "must be >= 1")
+  expect_identical(clash$calls, 1L)
+})
+
+test_that("a pool gives up on a held port after three tries", {
+  skip_on_cran()
+  clash <- parallel_util_port_clash()
+  expect_error(
+    par_make_pool(parallel_util_run_info(), size = 1, packages = character()),
+    paste("port", clash$busy, "cannot be opened")
+  )
+  expect_identical(clash$calls, 3L)
+})
+
 test_that("spark_task_cores gives each Spark task its share of the node", {
   expect_identical(spark_task_cores("2", NA, 32), 15L)
   expect_identical(spark_task_cores("1", NA, 32), 31L)

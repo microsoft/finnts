@@ -121,6 +121,7 @@
   -   Avoids intermittent "missing a best model" and "No trained models found" Agent retries.
 -   Multistep glmnet, xgboost, cubist, mars and svm models now train when finnts is loaded but not attached.
   -   Previously they were silently dropped, for example in `finnts::` calls or background jobs.
+-   Inner parallel pools now start on a free port, so concurrent Spark tasks no longer fail on port clashes.
 
 ## Breaking Changes
 
