@@ -196,6 +196,16 @@ with(common, {
     any(grepl("Requested workers exceed", finn_plan_with_others(200, 0, FALSE,
       list(cores = 0L, gb = 0, runs = list()), big, num_cores = 99)$plan$warnings)))
   check("never both parallel modes", all(vapply(list(s1, s2, s3, s4, s5), function(s) !(identical(s$parallel_processing, "local_machine") && s$inner_parallel), logical(1))))
+  check("core detection falls back to all logical processors without parallelly",
+    identical(finn_detect_cores(has_parallelly = FALSE), as.integer(parallel::detectCores(logical = TRUE))))
+  if (requireNamespace("parallelly", quietly = TRUE) && isTRUE(parallel::detectCores() > 2)) {
+    # parallelly honors container, scheduler, and R CMD check core limits; this one is portable.
+    old_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", unset = NA)
+    Sys.setenv("_R_CHECK_LIMIT_CORES_" = "TRUE")
+    limited <- finn_system_resources()$cores
+    if (is.na(old_limit)) Sys.unsetenv("_R_CHECK_LIMIT_CORES_") else Sys.setenv("_R_CHECK_LIMIT_CORES_" = old_limit)
+    check("core detection respects limits parallelly reports", identical(limited, 2L))
+  }
 
   # ---- Sharing the computer across projects -----------------------------------
   check("worker memory estimate", finn_worker_gb(0) == 0.3 && finn_worker_gb(1) == 0.3 && finn_worker_gb(NULL) == 0.3)
@@ -2229,6 +2239,40 @@ with(inst, {
   check("compare: messages are plain text", all(nzchar(vapply(list(
     list(version = "1.1.0"), list(version = "1.3.0"), list(version = "1.2.0", source = "github", sha = "abc123")
   ), function(i) finn_compare_finnts(i, t1)$message, character(1)))))
+
+  # Installed-package table shaped like utils::installed.packages(): one row per
+  # c(Package, Version, Imports, Depends, Priority); NA marks an empty field.
+  fake_db <- function(...) {
+    rows <- lapply(list(...), function(r) c(r, rep(NA_character_, 5 - length(r)))[1:5])
+    db <- do.call(rbind, rows)
+    colnames(db) <- c("Package", "Version", "Imports", "Depends", "Priority")
+    db
+  }
+  # Loading a package in the installer process blocks its upgrade on Windows.
+  inst$requireNamespace <- function(...) stop("the dependency check must not load packages")
+  tree <- fake_db(
+    c("finnts", "0.7.0", "tune (>= 2.0.1), dials (>= 1.4.0), stats", "R (>= 4.1)"),
+    c("tune", "2.1.0", "dials (>= 1.4.3),\n    hardhat (>= 1.4.2), parallel"),
+    c("dials", "1.4.0", "hardhat"),
+    c("hardhat", "1.4.2"),
+    c("stats", "4.6.2", NA, NA, "base")
+  )
+  check("dependency check finds versions a dependency of finnts needs",
+    identical(finn_unmet_dependencies("finnts", tree), "dials"))
+  check("dependency check passes a satisfied tree",
+    identical(finn_unmet_dependencies("finnts", fake_db(c("finnts", "0.7.0", "tune (>= 2.0.1)"),
+      c("tune", "2.1.0", "hardhat (> 1.4.1)"), c("hardhat", "1.4.2"))), character()))
+  check("dependency check reports packages missing deep in the tree",
+    identical(finn_unmet_dependencies("finnts", fake_db(c("finnts", "0.7.0", "tune"),
+      c("tune", "2.1.0", "tailor (>= 0.1.0)"))), "tailor"))
+  check("dependency check uses the first library's copy and survives cycles",
+    identical(finn_unmet_dependencies("finnts", fake_db(c("finnts", "0.7.0", "a (>= 2.0)"),
+      c("a", "1.0", "b"), c("a", "3.0", "b"), c("b", "1.0", "a"))), "a"))
+  check("dependency check is empty when finnts is not installed",
+    identical(finn_unmet_dependencies("finnts", fake_db(c("tune", "2.1.0"))), character()))
+  check("helper check finds missing packages without loading them",
+    identical(finn_missing_helpers(c("stats", "finn.no.such.package")), "finn.no.such.package"))
+  rm("requireNamespace", envir = inst)
 })
 
 up <- load_functions("update_skill.R", parent = common)

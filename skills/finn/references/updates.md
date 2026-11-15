@@ -93,8 +93,9 @@ The exact compared commit is installed, so the build the user approved is the bu
 get. If `data$github$skill_version` is newer than the skill, also offer a skill update.
 The install is recorded in `update_history.json`, so
 `update_skill.R --action=rollback --package_only=true --confirm=true` restores the
-previous build. `install_finnts.R` reports success only when required declared
-dependencies and core forecast capabilities are available. GitHub installs must
+previous build. `install_finnts.R` reports success only when every package in finnts'
+dependency tree meets the minimum versions its dependents declare and core forecast
+capabilities are available. GitHub installs must
 identify the selected commit; an unverifiable build or unmet dependency is an
 explicit error, not a successful install.
 

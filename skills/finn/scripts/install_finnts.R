@@ -15,36 +15,109 @@ local({
   source(file.path(dirname(gsub("~\\+~", " ", file_arg)), "finn_common.R"))
 })
 
-#' Packages whose installed version is below what finnts declares
+#' Installed packages R would load, one row each
+#'
+#' Reads DESCRIPTION metadata only, so no package is loaded: on Windows R
+#' cannot replace a package whose DLL the installing session has loaded. The
+#' cache is bypassed because packages change during installation.
+#'
+#' @return Character matrix with `Package`, `Version`, `Imports`, `Depends`, and
+#'   `Priority` columns; the first library in `.libPaths()` wins for duplicates.
+finn_installed_db <- function() {
+  db <- utils::installed.packages(noCache = TRUE)
+  db[!duplicated(db[, "Package"]), c("Package", "Version", "Imports", "Depends", "Priority"), drop = FALSE]
+}
+
+#' Split a Depends or Imports field into requirements
+#'
+#' @param field DESCRIPTION field text, e.g. `"dials (>= 1.4.3),\n hardhat"`.
+#' @return List of `name`, `op` (NULL when unversioned), and `version`.
+finn_parse_requirements <- function(field) {
+  entries <- trimws(strsplit(gsub("\\s+", " ", paste(field, collapse = ",")), ",", fixed = TRUE)[[1]])
+  lapply(entries[nzchar(entries)], function(e) {
+    req <- regmatches(e, regexec("\\(\\s*([<>=]+)\\s*([^) ]+)\\s*\\)", e))[[1]]
+    list(name = trimws(sub("\\(.*$", "", e)), op = if (length(req) == 3) req[[2]], version = if (length(req) == 3) req[[3]])
+  })
+}
+
+#' Whether an installed version meets a minimum
+#'
+#' Only minimums (`>=`, `>`) are checked, since an upgrade can only fix those;
+#' unparsable versions count as met so the installer never loops on them.
+#'
+#' @param have Installed version.
+#' @param op Requirement operator, or NULL.
+#' @param need Required version.
+#' @return Logical.
+finn_requirement_met <- function(have, op, need) {
+  if (is.null(op) || !op %in% c(">=", ">")) {
+    return(TRUE)
+  }
+  h <- tryCatch(package_version(have), error = function(e) NULL)
+  n <- tryCatch(package_version(need), error = function(e) NULL)
+  if (is.null(h) || is.null(n)) {
+    return(TRUE)
+  }
+  if (identical(op, ">=")) h >= n else h > n
+}
+
+#' Packages in finnts' dependency tree that are missing or too old
 #'
 #' `remotes::install_github(upgrade = "never")` installs missing packages but
-#' leaves older installed ones alone, even when finnts needs a newer version.
+#' leaves older installed ones alone, and a newly installed package can need a
+#' newer version of something already installed (tune 2.1.0 needs dials 1.4.3
+#' while finnts asks only for dials 1.4.0). So every installed package
+#' reachable from `pkg` through Depends and Imports is checked against the
+#' minimums its dependents declare. Base packages and R itself are skipped.
 #'
-#' @param pkg Package whose Depends and Imports are checked.
-#' @return Character vector of package names to install or upgrade.
-finn_unmet_dependencies <- function(pkg = "finnts") {
-  desc <- suppressWarnings(utils::packageDescription(pkg))
-  if (!is.list(desc)) {
+#' @param pkg Root package.
+#' @param db Table from [finn_installed_db()].
+#' @return Character vector of package names to install or upgrade, in the
+#'   order found; empty when `pkg` is not installed.
+finn_unmet_dependencies <- function(pkg = "finnts", db = finn_installed_db()) {
+  base_pkgs <- c("base", "compiler", "datasets", "graphics", "grDevices", "grid", "methods",
+    "parallel", "splines", "stats", "stats4", "tcltk", "tools", "utils")
+  db <- db[!duplicated(db[, "Package"]), , drop = FALSE]
+  rownames(db) <- db[, "Package"]
+  base_pkgs <- union(base_pkgs, db[which(db[, "Priority"] == "base"), "Package"])
+  if (!pkg %in% rownames(db)) {
     return(character())
   }
-  fields <- paste(desc$Depends %||% "", desc$Imports %||% "", sep = ",")
-  entries <- trimws(strsplit(gsub("\\s+", " ", fields), ",", fixed = TRUE)[[1]])
-  entries <- entries[nzchar(entries)]
-  base_pkgs <- rownames(utils::installed.packages(priority = "base"))
+  queue <- pkg
+  seen <- pkg
   unmet <- character()
-  for (e in entries) {
-    name <- trimws(sub("\\(.*$", "", e))
-    if (name %in% c("R", base_pkgs) || !nzchar(name)) next
-    if (!requireNamespace(name, quietly = TRUE)) {
-      unmet <- c(unmet, name)
-      next
-    }
-    if (grepl(">=", e, fixed = TRUE)) {
-      need <- trimws(sub("^.*>=\\s*([^)]+)\\).*$", "\\1", e))
-      if (finn_version_newer(need, as.character(utils::packageVersion(name)))) unmet <- c(unmet, name)
+  while (length(queue) > 0) {
+    fields <- db[queue[[1]], c("Depends", "Imports")]
+    queue <- queue[-1]
+    for (req in finn_parse_requirements(fields[!is.na(fields)])) {
+      if (!nzchar(req$name) || req$name %in% c("R", base_pkgs)) next
+      if (!req$name %in% rownames(db)) {
+        unmet <- c(unmet, req$name)
+        next
+      }
+      if (!finn_requirement_met(db[req$name, "Version"], req$op, req$version)) unmet <- c(unmet, req$name)
+      if (!req$name %in% seen) {
+        seen <- c(seen, req$name)
+        queue <- c(queue, req$name)
+      }
     }
   }
   unique(unmet)
+}
+
+#' Helper packages the skill needs that are missing or too old
+#'
+#' Checks installed metadata without loading anything, so the helpers (and
+#' the finnts dependencies they share) can still be upgraded on Windows.
+#'
+#' @param helpers Package names.
+#' @return Character vector of packages to install.
+finn_missing_helpers <- function(helpers) {
+  missing <- helpers[!vapply(helpers, function(h) nzchar(system.file(package = h)), logical(1))]
+  if ("processx" %in% helpers && !"processx" %in% missing && utils::packageVersion("processx") < "3.9.0") {
+    missing <- c(missing, "processx")
+  }
+  missing
 }
 
 #' Validate finnts installation postconditions
@@ -133,10 +206,7 @@ finn_main(function(args) {
   cran_version <- finn_arg(args, "version")
   helpers <- c("jsonlite", "ps", "processx", "digest", "readxl")
   if (finn_bool(finn_arg(args, "include_llm"), TRUE)) helpers <- c(helpers, "ellmer")
-  missing_helpers <- helpers[!vapply(helpers, requireNamespace, logical(1), quietly = TRUE)]
-  if (!"processx" %in% missing_helpers && utils::packageVersion("processx") < "3.9.0") {
-    missing_helpers <- c(missing_helpers, "processx")
-  }
+  missing_helpers <- finn_missing_helpers(helpers)
   previous <- finn_installed_finnts()
   force <- finn_bool(finn_arg(args, "force"))
   target <- if (source_type == "github") finn_github_target(ref)
@@ -206,15 +276,28 @@ finn_main(function(args) {
     utils::install.packages("finnts", lib = lib, repos = repos, dependencies = TRUE)
   }
 
-  if (!requireNamespace("finnts", quietly = TRUE)) {
-    return(finn_result(FALSE, "error", "finnts did not install. Check the log above for the first error.", plan,
-      c("Share the first install error with the user. If GitHub is blocked, ask the user or their IT team to allow github.com and api.github.com (see references/setup.md), then retry.")))
+  # The result returned when finnts is absent or won't load after installing.
+  install_failed <- function() {
+    finn_result(FALSE, "error", "finnts did not install. Check the log above for the first error.", plan,
+      c("Share the first install error with the user. If GitHub is blocked, ask the user or their IT team to allow github.com and api.github.com (see references/setup.md), then retry."))
+  }
+  # Check and upgrade before loading finnts: R on Windows won't replace a
+  # package this session has loaded.
+  if (!nzchar(system.file(package = "finnts"))) {
+    return(install_failed())
   }
   unmet <- finn_unmet_dependencies()
-  if (length(unmet) > 0) {
-    finn_log("Upgrading packages below the versions finnts needs: ", paste(unmet, collapse = ", "))
+  for (round in seq_len(3)) {
+    if (length(unmet) == 0) break
+    finn_log("Upgrading packages below the versions finnts or its dependencies need: ", paste(unmet, collapse = ", "))
     utils::install.packages(unmet, lib = lib, repos = repos)
+    previous_unmet <- unmet
     unmet <- finn_unmet_dependencies()
+    # CRAN has nothing newer for these, so another round can't help.
+    if (setequal(unmet, previous_unmet)) break
+  }
+  if (!requireNamespace("finnts", quietly = TRUE)) {
+    return(install_failed())
   }
   installed <- finn_installed_finnts()
   plan$finnts_version <- installed$version

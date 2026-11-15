@@ -1095,11 +1095,30 @@ finn_disk_usage <- function(paths) {
 # Machine resources and parallel strategy
 # ---------------------------------------------------------------------------
 
+#' Number of CPU cores Finn may use on this machine
+#'
+#' Matches finnts' own core detection: with parallelly installed (a finnts
+#' dependency), container, job-scheduler, and R CMD check limits are honored;
+#' otherwise every logical processor counts.
+#'
+#' @param has_parallelly Whether parallelly is available; injectable for tests.
+#' @return Integer core count, or NA when detection fails.
+finn_detect_cores <- function(has_parallelly = requireNamespace("parallelly", quietly = TRUE)) {
+  if (has_parallelly) {
+    cores <- tryCatch(as.integer(unname(parallelly::availableCores())), error = function(e) NA_integer_)
+    if (length(cores) == 1L && isTRUE(cores >= 1L)) {
+      return(cores)
+    }
+  }
+  as.integer(parallel::detectCores(logical = TRUE))
+}
+
 #' Machine cores and memory
 #'
-#' @return List with `cores`, `free_gb`, and `total_gb` (NA when unknown).
+#' @return List with `cores` (from [finn_detect_cores()]), `free_gb`, and
+#'   `total_gb` (NA when unknown).
 finn_system_resources <- function() {
-  cores <- parallel::detectCores(logical = TRUE)
+  cores <- finn_detect_cores()
   mem <- if (requireNamespace("ps", quietly = TRUE)) {
     tryCatch(ps::ps_system_memory(), error = function(e) NULL)
   }
@@ -1112,7 +1131,7 @@ finn_system_resources <- function() {
 
 #' Machine-wide CPU and memory planning budgets
 #'
-#' Leaves one logical processor available and estimates 300 MB per worker
+#' Leaves one detected core available and estimates 300 MB per worker
 #' within 80 percent of total RAM. Unknown resources allow only sequential
 #' work and are explicitly reported; available RAM is a warning signal.
 #'
@@ -1122,7 +1141,7 @@ finn_resource_budget <- function(resources) {
   valid <- function(x) is.numeric(x) && length(x) == 1L && is.finite(x) && x > 0
   warnings <- character()
   cpu <- if (valid(resources$cores)) max(1L, floor(resources$cores) - 1L) else {
-    warnings <- c(warnings, "Could not detect the logical processor count; using sequential processing.")
+    warnings <- c(warnings, "Could not detect the CPU core count; using sequential processing.")
     1L
   }
   ram <- if (valid(resources$total_gb)) resources$total_gb * 0.8 else {
