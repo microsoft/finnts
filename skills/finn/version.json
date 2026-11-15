@@ -1,7 +1,15 @@
 {
-  "version": "0.3.6",
-  "released": "2026-11-12",
+  "version": "0.3.7",
+  "released": "2026-11-15",
   "changelog": [
+    {
+      "version": "0.3.7",
+      "date": "2026-11-15",
+      "changes": [
+        "Installs upgrade every package in finnts' dependency tree that another package needs newer, checked without loading packages so Windows upgrades succeed.",
+        "Counts CPU cores the way finnts does, respecting container and job-scheduler limits; parallelism notes cover worker reuse and measured worker memory."
+      ]
+    },
     {
       "version": "0.3.6",
       "date": "2026-11-12",
