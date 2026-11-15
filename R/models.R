@@ -645,13 +645,17 @@ glmnet <- function(train_data,
 #' Automatic MARS pruning methods
 #'
 #' Cross-validation pruning requires engine-level fold configuration and is
-#' intentionally reserved for explicit model specifications.
+#' intentionally reserved for explicit model specifications. Exhaustive pruning
+#' is excluded because it searches every subset of terms: with finnts' lag and
+#' rolling features and large `num_terms` draws, one fit took over 15 minutes
+#' (earth reported 3.5e13 subsets on a 96-month series). It also stays
+#' available through explicit specifications.
 #'
 #' @return A qualitative parameter containing supported automatic methods.
 #' @noRd
 mars_automatic_prune_method <- function() {
   dials::prune_method(
-    values = c("backward", "none", "exhaustive", "forward", "seqrep")
+    values = c("backward", "none", "forward", "seqrep")
   )
 }
 

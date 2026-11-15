@@ -253,7 +253,7 @@ test_that("update(selected_features) errors on standard parsnip specs", {
   )
 })
 
-test_that("automatic MARS grids exclude cross-validation pruning", {
+test_that("automatic MARS grids exclude cross-validation and exhaustive pruning", {
   prune_methods <- dials::grid_regular(
     mars_automatic_prune_method(),
     levels = 10
@@ -261,9 +261,9 @@ test_that("automatic MARS grids exclude cross-validation pruning", {
 
   expect_setequal(
     prune_methods,
-    c("backward", "none", "exhaustive", "forward", "seqrep")
+    c("backward", "none", "forward", "seqrep")
   )
-  expect_false("cv" %in% prune_methods)
+  expect_false(any(c("cv", "exhaustive") %in% prune_methods))
 })
 
 test_that("multistep MARS supports explicit cross-validation pruning", {

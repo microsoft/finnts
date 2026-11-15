@@ -33,6 +33,8 @@
 - Simple model averages are computed up to 50 times faster, with identical results.
 - `prep_data()` on Spark no longer preps partial series to infer its output columns, skipping one Spark job.
 - Drops the `plyr` and `gtools` dependencies; average model IDs and combined CSV reads are unchanged.
+- Automatic MARS tuning skips exhaustive pruning, which can exceed 15 minutes per fit; MARS grids and forecasts change once.
+  - Saved runs keep their chosen pruning when `update_forecast()` refits without retuning.
 
 ## Bug Fixes
 
