@@ -40,3 +40,30 @@ test_that("custom updates always refit enrolled custom models beside a built-in 
   expect_identical(unique(chained$Model_ID[chained$Best_Model == "Yes"]), winner)
   expect_equal(unique(chained$Forecast[chained$Model_ID == custom_id & chained$Train_Test_ID == 1]), 101)
 })
+
+test_that("updates saved without custom comparisons require a new Agent version", {
+  fixture <- custom_update_fixture(builtin_winner = TRUE)
+  args <- fixture$args
+  current <- fixture$current
+  local_custom_update_runtime()
+  custom_id <- paste0("custom-", args$custom_models$replay_mean$definition$version_id, "--local--C1")
+  best <- get_best_agent_run(current)
+  # Recreate an update child saved before custom comparisons were always refit.
+  child <- current$project_info
+  child$project_name <- paste0(child$project_name, "_", hash_data("first"))
+  child$run_name <- best$best_run_name[[1]]
+  models <- readRDS(local_artifact_path(child, "models", "-single_models", hash_data("first"), "rds"))
+  write_data(models[models$Model_ID != custom_id, ], "first", child, "object", "models", "-single_models")
+  rows <- read_selection_file(child, "forecasts", "-single_models", "first")
+  write_data(rows[rows$Model_ID != custom_id, ], "first", child, "data", "forecasts", "-single_models")
+  stale_error <- "every enrolled custom model for comparison"
+  expect_error(audit_agent_custom_best(load_agent_custom_state(current), best), stale_error)
+
+  args$input_data <- rbind(args$input_data, data.frame(Date = as.Date("2022-02-01"), series = "first", value = 101))
+  next_run <- do.call(set_agent_info, args)
+  files <- list.files(args$project_info$path, recursive = TRUE, full.names = TRUE)
+  before <- tools::md5sum(files)
+  expect_error(update_forecast(next_run, allow_iterate_forecast = FALSE, num_cores = 1), stale_error)
+  expect_setequal(list.files(args$project_info$path, recursive = TRUE, full.names = TRUE), files)
+  expect_identical(tools::md5sum(files), before)
+})
