@@ -867,8 +867,9 @@ agent_custom_comparison_ids <- function(contract, model_type) {
 
 # Audit replay outputs using the exact per-series component mapping plus the
 # always-run custom comparisons, not the full parent search pool. One shared fit
-# union and all required native keys are checked before reuse/publication. Damage,
-# foreign identities and outputs saved without comparisons are hard errors.
+# union and all required native keys, including each comparison's own rows, are
+# checked before reuse/publication. Damage, foreign identities and outputs saved
+# without comparisons are hard errors.
 audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) {
   record <- read_agent_custom_update(agent_info, TRUE)
   if (!identical(log$custom_agent_update_id, paste0("custom-update-", record$manifest_id))) {
@@ -879,7 +880,8 @@ audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) 
   global <- winners[[1]]$model_type == "global"
   comparisons <- agent_custom_comparison_ids(agent_info$custom_agent_contract, if (global) "global" else "local")
   expected_ids <- unique(c(unlist(lapply(winners, function(winner) winner$components), use.names = FALSE), comparisons))
-  saved <- read_update_result(run_info, names(winners), global, agent_info$forecast_horizon)
+  saved <- read_update_result(run_info, names(winners), global, agent_info$forecast_horizon,
+    comparison_ids = comparisons)
   if (!is.null(saved) && length(setdiff(comparisons, saved$models$Model_ID)) &&
     all(saved$models$Model_ID %in% expected_ids)) {
     stop("Custom update outputs do not include every enrolled custom model for comparison; ",

@@ -39,11 +39,13 @@ test_that("saved custom updates and new-series defaults preserve model-owned dri
     expect_equal(rows$Forecast, (if (combo == "series1") 2 else 1.5) * (125:126))
     historical <- forecasts[which(forecasts$Combo == combo & forecasts$Model_Name == "unit_growth" &
       forecasts$Train_Test_ID == 1), ]
-    if (combo == "new-series")
-      expect_equal(historical$Forecast, c(1452, 1730.3), tolerance = 1e-8)
-    else
-      expect_length(historical$Forecast, 0)
+    # The replayed series refits the non-winning unit_growth model for comparison.
+    expect_equal(historical$Forecast, c(1452, 1730.3), tolerance = 1e-8)
   }
+  series1 <- forecasts[forecasts$Combo == "series1", ]
+  expect_true(all(series1$Best_Model[series1$Model_Name %in% "unit_growth"] == "No"))
+  expect_identical(unique(series1$Model_ID[series1$Best_Model == "Yes"]),
+    read_agent_custom_update(current, TRUE)$winners$series1$selected_id)
   expect_identical(load_agent_custom_state(current)$custom_agent_contract$envelopes$unit_growth,
     args$custom_models$unit_growth)
   expect_no_error(audit_agent_custom_best(load_agent_custom_state(current), get_best_agent_run(current)))

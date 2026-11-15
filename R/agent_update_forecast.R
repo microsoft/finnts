@@ -1060,6 +1060,11 @@ validate_global_update_publication <- function(result, combos) {
 #'   using the predecessor's selections. Validation is in memory, without fitting,
 #'   reconciliation, or additional run-log tracking.
 #'   Missing, ambiguous, incomplete or invalid selected artifacts request refitting.
+#' @param comparison_ids Optional always-run custom model IDs published beside
+#'   the winners. Each one saved for a series, other than that series' winner
+#'   components, must pass the same fit, key, uniqueness and finite-value checks
+#'   as a winner, without taking part in winner selection. Absent comparisons
+#'   are left to the caller's identity audit.
 #' @return Loaded models and forecasts if complete, otherwise NULL. Shared fits
 #'   are read once. Provider/access errors propagate; recognized damage does not.
 #'   Declared validation/ensemble rows do not determine the selected artifact
@@ -1071,7 +1076,8 @@ validate_global_update_publication <- function(result, combos) {
 #' @noRd
 read_update_result <- function(info, combos, global, horizon, approach = "bottoms_up",
                                splits = NULL, recipes = NULL, selected_ids = NULL,
-                               previous_hierarchy = NULL, allow_selection_recovery = FALSE) {
+                               previous_hierarchy = NULL, allow_selection_recovery = FALSE,
+                               comparison_ids = character()) {
   models <- read_update_artifact(info, local_artifact_path(info, "models", "-single_models",
     hash_data(if (global) "All-Data" else combos[[1]]), info$object_output))
   if (!is.data.frame(models) || !nrow(models) ||
@@ -1110,6 +1116,14 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
       coverage$non_delivery_ids)) return(NULL)
     source_selected[[combo]] <- unique(as.character(rows$Model_ID[rows$Best_Model == "Yes" &
       !rows$Train_Test_ID %in% coverage$non_delivery_ids]))
+    # Validate each saved comparison as if it were the only selected model.
+    winner_components <- strsplit(source_selected[[combo]], "_", fixed = TRUE)[[1]]
+    for (comparison in setdiff(intersect(comparison_ids, rows$Model_ID), winner_components)) {
+      comparison_rows <- rows[rows$Model_ID == comparison, , drop = FALSE]
+      comparison_rows$Best_Model <- "Yes"
+      if (!valid_update_forecasts(comparison_rows, models, horizon, coverage$required,
+        coverage$non_delivery_ids)) return(NULL)
+    }
     forecasts[[index]] <- rows
   }
   log <- if (hierarchical) read_update_artifact(info, local_artifact_path(info, "logs", extension = "csv")) else NULL
@@ -1169,8 +1183,9 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #' @param approach Saved forecast approach used to locate source and reconciled
 #'   predictions. Saved preparation supplies coverage keys, without being changed.
 #' @param comparison_ids Optional always-run custom model IDs saved beside the
-#'   winners; they are excluded from the rebuilt model-pool metrics so restarts
-#'   log the same winner-only statistics as a fresh update.
+#'   winners; they are validated like winners on read and excluded from the
+#'   rebuilt model-pool metrics so restarts log the same winner-only statistics
+#'   as a fresh update.
 #' @return TRUE when complete outputs were reused, otherwise FALSE to refit.
 #'   Missing completion records are rebuilt using existing settings and native
 #'   aggregate accuracy. No predictions, fits or matching best records are written.
@@ -1183,7 +1198,8 @@ resume_update_result <- function(agent_info, info, combos, global, splits, compo
                                  previous_hierarchy = NULL, allow_selection_recovery = FALSE,
                                  comparison_ids = character()) {
   saved <- read_update_result(info, combos, global, agent_info$forecast_horizon,
-    approach, splits, recipes, selected_ids, previous_hierarchy, allow_selection_recovery)
+    approach, splits, recipes, selected_ids, previous_hierarchy, allow_selection_recovery,
+    comparison_ids = comparison_ids)
   if (is.null(saved) || !all(components %in% saved$models$Model_ID)) return(FALSE)
   log <- saved$run_log %||% read_update_artifact(info, local_artifact_path(info, "logs", extension = "csv"))
   if (!is.data.frame(log) || !nrow(log)) return(FALSE)
@@ -3254,6 +3270,8 @@ update_model_execution <- function(expression, model, recoverable) {
 #' @details Temporal custom workflows evaluate complete horizons using existing
 #'   predictor rows, then discard unrequested predictions before scoring. Analysis
 #'   rows, target isolation, selected components and exact source identity remain.
+#'   Raw C1 custom data is never transformed, so stationary and Box-Cox reversal
+#'   apply only to built-in recipes, matching train_models().
 #'   Reconstructed historical-driver workflows retain their prediction dispatch
 #'   in the returned fitted objects, including after serialization.
 #' @noRd
@@ -3537,7 +3555,10 @@ fit_models <- function(run_info,
       dplyr::select(Hyperparameter_Combo, Hyperparameters) %>%
       tidyr::unnest(Hyperparameters)
 
-    if (isTRUE(prev_run_log_tbl$stationary) &
+    # C1 data is never transformed, so custom rows skip stationary/Box-Cox undo steps
+    transformed_recipe <- data_prep_recipe != "C1"
+
+    if (transformed_recipe && isTRUE(prev_run_log_tbl$stationary) &
       (!(model %in% list_multivariate_models()) || model %in% list_foundation_models())) {
       # undifference the data for a univariate model or foundation model
       hist_end_date <- model_train_test_tbl %>%
@@ -3662,7 +3683,7 @@ fit_models <- function(run_info,
     }
 
     # undo differencing transformation
-    if (isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
+    if (transformed_recipe && isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%
@@ -3689,7 +3710,7 @@ fit_models <- function(run_info,
     }
 
     # undo box-cox transformation
-    if (isTRUE(prev_run_log_tbl$box_cox)) {
+    if (transformed_recipe && isTRUE(prev_run_log_tbl$box_cox)) {
       if (combo == "All-Data") {
         final_fcst <- final_fcst %>%
           dplyr::group_by(Combo) %>%

@@ -97,3 +97,36 @@ test_that("updates saved without custom comparisons require a new Agent version"
   expect_setequal(list.files(args$project_info$path, recursive = TRUE, full.names = TRUE), files)
   expect_identical(tools::md5sum(files), before)
 })
+
+test_that("damaged saved custom comparisons are hard errors, not reused output", {
+  # Each case damages only the non-winning comparison: a missing future
+  # forecast, a dropped backtest date and a duplicated row.
+  damage <- list(
+    missing_value = function(rows, id) {
+      rows$Forecast[rows$Model_ID == id & rows$Train_Test_ID == 1] <- NA
+      rows
+    },
+    missing_date = function(rows, id) rows[!(rows$Model_ID == id & rows$Train_Test_ID == 2), ],
+    duplicate_row = function(rows, id) rbind(rows, rows[which(rows$Model_ID == id)[1], ])
+  )
+  for (case in names(damage)) local({
+    fixture <- custom_update_fixture(builtin_winner = TRUE)
+    current <- fixture$current
+    local_custom_update_runtime()
+    custom_id <- paste0("custom-", fixture$args$custom_models$replay_mean$definition$version_id, "--local--C1")
+    best <- get_best_agent_run(current)
+    child <- current$project_info
+    child$project_name <- paste0(child$project_name, "_", hash_data("first"))
+    child$run_name <- best$best_run_name[[1]]
+    rows <- read_selection_file(child, "forecasts", "-single_models", "first")
+    write_data(damage[[case]](rows, custom_id), "first", child, "data", "forecasts", "-single_models")
+    expect_error(audit_agent_custom_best(load_agent_custom_state(current), best),
+      "damaged or foreign fitted outputs", info = case)
+    files <- list.files(fixture$args$project_info$path, recursive = TRUE, full.names = TRUE)
+    before <- tools::md5sum(files)
+    local_mocked_bindings(fit_models = function(...) stop("Unexpected refit"), .package = "finnts")
+    expect_error(update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1),
+      "damaged or foreign fitted outputs", info = case)
+    expect_identical(tools::md5sum(files), before, info = case)
+  })
+})
