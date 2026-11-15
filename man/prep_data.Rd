@@ -36,7 +36,11 @@ prep_data(
 \item{input_data}{A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
 Can also include external regressors for both historical and future data.
 Leading and trailing whitespace in character combo-variable values is
-removed before Finn creates internal series identifiers.}
+removed before Finn creates internal series identifiers. Values left blank
+are treated as missing; missing combo values form the \code{"NA"} label in
+series names. A combo column with both missing values and the text \code{"NA"}
+gives both the same label, so bottoms-up forecasts combine them and
+standard and grouped hierarchies stop with an error.}
 
 \item{combo_variables}{List of column headers within input data to be used to separate individual time series.}
 

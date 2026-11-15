@@ -73,7 +73,8 @@ contain R code, file paths, or web addresses.
    alone does **not** replace an existing configuration's `data.file`; do not use it
    as the configuration handoff. The settings review and the forecast run read series
    columns as text, so IDs such as `001` keep their leading zeros and blank identifiers
-   fail the same input check during preparation and forecasting.
+   are treated the same way during preparation and forecasting: as missing values that
+   form the `"NA"` series label.
 
 If a check fails, the response is `gate_failed`, with no token and no file written. Explain
 each FAIL row in plain language, revise the spec, and preview again.
@@ -186,8 +187,8 @@ Filling a target after the history end is never allowed.
 
 - The prepared file reads back with the run's settings.
 - finnts' own input checks (`finnts::validate_prepared_input()`) with the real settings:
-  required columns, the reserved `Date` column, a numeric target, trimmed non-blank
-  series names, no duplicate series/date rows, dates on the period grid, a valid date
+  required columns, the reserved `Date` column, a numeric target, trimmed series names
+  (blank names become the `"NA"` label), no duplicate series/date rows, dates on the period grid, a valid date
   type and fiscal year start, future rows and drivers, gaps and blank target values,
   series that `combo_cleanup_date` would drop, series too short for the horizon and back
   tests, and no total rows mixed with detail rows. Some items, such as gaps or short

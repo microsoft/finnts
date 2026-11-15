@@ -34,6 +34,9 @@ utils::globalVariables(c(
 
 #' @importFrom magrittr %>%
 
+# Base R only provides %||% from R 4.4; the package supports R 4.0 and later.
+#' @importFrom rlang %||%
+
 #' @importFrom methods formalArgs
 
 #' @importFrom stats sd setNames

@@ -6,7 +6,11 @@
 #' @param input_data A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
 #'   Can also include external regressors for both historical and future data.
 #'   Leading and trailing whitespace in character combo-variable values is
-#'   removed before Finn creates internal series identifiers.
+#'   removed before Finn creates internal series identifiers. Values left blank
+#'   are treated as missing; missing combo values form the `"NA"` label in
+#'   series names. A combo column with both missing values and the text `"NA"`
+#'   gives both the same label, so bottoms-up forecasts combine them and
+#'   standard and grouped hierarchies stop with an error.
 #' @param combo_variables List of column headers within input data to be used to separate individual time series.
 #' @param target_variable The column header formatted as a character value within input data you want to forecast.
 #' @param date_type The date granularity of the input data. Finn accepts the following as a character string:

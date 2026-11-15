@@ -59,8 +59,11 @@ character_combo_variables <- function(input_data,
 #' Normalize combo variable values
 #'
 #' Removes leading and trailing whitespace from character-like combo values so
-#' every workflow stage constructs the same internal combo identifier. Numeric
-#' combo variables and missing values are unchanged.
+#' every workflow stage constructs the same internal combo identifier. Values
+#' left empty by trimming become missing values, so they form the `"NA"` label
+#' in combo names like other missing values, whichever file reader produced
+#' them. Factors become character. Numeric combo variables and all other
+#' columns are unchanged. The expression is translatable for Spark tables.
 #'
 #' @param input_data input data
 #' @param combo_variables combo variable names
@@ -82,9 +85,35 @@ normalize_combo_values <- function(input_data,
     dplyr::mutate(
       dplyr::across(
         tidyselect::all_of(variables_to_normalize),
-        ~ stringr::str_trim(as.character(.x))
+        ~ dplyr::na_if(stringr::str_trim(as.character(.x)), "")
       )
     )
+}
+
+#' Find combo columns with values that are blank after trimming
+#'
+#' `normalize_combo_values()` turns these values into missing values, so
+#' `validate_prepared_input()` calls this on the original data to report which
+#' columns will use the `"NA"` label for them.
+#'
+#' @param input_data local data frame with the original combo values
+#' @param combo_variables combo variable names; absent columns are ignored
+#'
+#' @return character vector of character-like combo columns with at least one
+#'   value that is empty after trimming whitespace. No I/O.
+#' @noRd
+blank_combo_columns <- function(input_data,
+                                combo_variables) {
+  variables <- character_combo_variables(
+    input_data = input_data,
+    combo_variables = combo_variables
+  )
+
+  variables[vapply(
+    variables,
+    function(variable) any(!nzchar(stringr::str_trim(as.character(input_data[[variable]]))), na.rm = TRUE),
+    logical(1)
+  )]
 }
 
 #' Format differences between two single-row log data frames
@@ -177,6 +206,8 @@ check_input_type <- function(input_name,
 #' Runs every input-data rule in a fixed order and stops at the first failure.
 #' Each rule lives in its own `check_input_*()` helper so
 #' [validate_prepared_input()] can report all failures with identical messages.
+#' Combo values are normalized first, so blank values count as missing. A combo
+#' column mixing missing values and the text `"NA"` only warns.
 #'
 #' @param input_data input name
 #' @param combo_variables combo variables
@@ -206,7 +237,7 @@ check_input_data <- function(input_data,
   check_input_combo_types(input_data, combo_variables)
   check_input_target_numeric(input_data, target_variable)
   check_input_date_column(input_data)
-  check_input_blank_combos(input_data, combo_variables)
+  check_input_mixed_missing_labels(input_data, combo_variables)
   check_input_date_alignment(input_data, date_type)
   check_input_fiscal_year_start(fiscal_year_start)
   check_input_parallel_type(input_data, parallel_processing)
@@ -350,49 +381,64 @@ check_input_date_column <- function(input_data) {
   }
 }
 
-#' Check that character combo values are not blank
+#' Warn when a combo column mixes missing values and the text "NA"
 #'
-#' Expects combo values already trimmed by `normalize_combo_values()`.
+#' Combo names are built with `tidyr::unite()`, which writes a missing value as
+#' `"NA"`, so a character combo column holding both a missing value (including
+#' one left blank by trimming) and the literal text `"NA"` gives both the same
+#' label. Bottoms-up forecasts keep combining series that differ only in that
+#' column, as before, so this only warns; standard and grouped hierarchies stop
+#' later in `check_mixed_missing_labels()`. Numeric columns cannot hold the
+#' text, and their `NA`/`NaN` names stay distinct, so they are skipped. Counts
+#' are computed in one summary query, so Spark tables are not collected; a
+#' missing count (SQL sums of all-NULL values or no rows) counts as zero.
 #'
-#' @param input_data input data with normalized combo values
+#' @param input_data local or Spark input data with combo values already
+#'   normalized by `normalize_combo_values()`
 #' @param combo_variables combo variable names
 #'
-#' @return nothing; stops when a character-like combo value is an empty string
+#' @return `NULL` invisibly; warns once for each affected column. No I/O.
 #' @noRd
-check_input_blank_combos <- function(input_data,
-                                     combo_variables) {
+check_input_mixed_missing_labels <- function(input_data,
+                                             combo_variables) {
   character_variables <- character_combo_variables(
     input_data = input_data,
     combo_variables = combo_variables
   )
 
-  if (length(character_variables) > 0) {
-    blank_combo_tbl <- input_data %>%
-      dplyr::filter(
-        dplyr::if_any(
-          tidyselect::all_of(character_variables),
-          ~ !is.na(.x) & .x == ""
-        )
-      ) %>%
-      dplyr::select(Date, tidyselect::all_of(character_variables)) %>%
-      utils::head(5) %>%
-      dplyr::collect()
+  if (length(character_variables) == 0) {
+    return(invisible(NULL))
+  }
 
-    if (nrow(blank_combo_tbl) > 0) {
-      affected_variables <- character_variables[vapply(
-        character_variables,
-        function(variable) any(blank_combo_tbl[[variable]] == "", na.rm = TRUE),
-        logical(1)
-      )]
+  label_counts <- input_data %>%
+    dplyr::ungroup() %>%
+    dplyr::summarise(
+      dplyr::across(
+        tidyselect::all_of(character_variables),
+        list(
+          missing = ~ sum(as.integer(is.na(.x)), na.rm = TRUE),
+          na_text = ~ sum(as.integer(.x == "NA"), na.rm = TRUE)
+        ),
+        .names = "{.col}__{.fn}"
+      )
+    ) %>%
+    dplyr::collect()
 
-      stop(
-        "combo variable values cannot be blank after trimming leading and trailing whitespace. ",
-        "Affected columns: ", paste(affected_variables, collapse = ", "), ". ",
-        "Sample dates: ", paste(unique(blank_combo_tbl$Date), collapse = ", "), ".",
+  for (variable in character_variables) {
+    if (isTRUE(label_counts[[paste0(variable, "__missing")]] > 0) &&
+      isTRUE(label_counts[[paste0(variable, "__na_text")]] > 0)) {
+      warning(
+        "Combo column '", variable, "' contains both missing values and the text \"NA\", ",
+        "which finnts names identically, so bottoms-up forecasts combine series that differ ",
+        "only in this column and standard or grouped hierarchies stop with an error. ",
+        "Blank values count as missing. Replace the missing or blank values, or the \"NA\" text, ",
+        "with a distinct label.",
         call. = FALSE
       )
     }
   }
+
+  invisible(NULL)
 }
 
 #' Check that period dates share one day of the month
@@ -454,7 +500,9 @@ check_input_parallel_type <- function(input_data,
 
 #' Check for duplicate combo and Date rows
 #'
-#' Expects combo values already trimmed by `normalize_combo_values()`.
+#' Expects combo values already normalized by `normalize_combo_values()`, so
+#' values differing only by surrounding whitespace, and blank, missing or
+#' `"NA"` text values, already share one combo name.
 #'
 #' @param input_data input data with normalized combo values
 #' @param combo_variables combo variable names
@@ -482,6 +530,7 @@ check_input_duplicates <- function(input_data,
       "duplicate rows have been detected in the input data. ",
       "Found ", dup_count, " duplicate rows based on combo variables and Date. ",
       "Leading and trailing whitespace in character combo values is ignored, so values that differ only by surrounding whitespace identify the same series. ",
+      "Blank values, missing values and the text \"NA\" also identify the same series, because each forms the \"NA\" label. ",
       "Sample duplicate dates: ",
       paste(unique(dup_sample$Date), collapse = ", "), ". ",
       "Remove duplicate rows so each combo-date combination is unique.",

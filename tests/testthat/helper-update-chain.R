@@ -322,10 +322,13 @@ finish_update_node_parent <- function(parent) {
 # update workers, default dispatch, best-run I/O and outer reconciliation are
 # used. Only costly default submission is replaced with a finalized local fit.
 # Assertions cover new/removed aggregates as well as bottoms and next-run routes.
+# Standard parents are positional, so the standard chain adds a region that
+# sorts last; a final region that sorts first must stop the update instead.
 check_update_node_chain <- function(approach, mode) {
   path <- withr::local_tempdir()
   base <- data.frame(Region = c("North", "North", "South", "South"), Product = c("A", "B", "A", "B"))
-  changed <- rbind(base[1:3, ], data.frame(Region = "East", Product = "C"))
+  added_region <- if (identical(approach, "standard_hierarchy")) "West" else "East"
+  changed <- rbind(base[1:3, ], data.frame(Region = added_region, Product = "C"))
   previous <- make_update_node_parent(path, 1, approach, base)
   nodes <- names(previous$levels)
   global <- switch(mode, global = nodes, local = character(), mixed = nodes[seq_along(nodes) %% 2L == 0L])
@@ -344,9 +347,8 @@ check_update_node_chain <- function(approach, mode) {
   for (version in 2:4) {
     current <- make_update_node_parent(path, version, approach, if (version == 4) base else changed)
     routing <- initial_checks(current$agent)
-    reassigned <- if (approach == "standard_hierarchy" && version %in% c(2, 4)) c("A", "B") else character()
-    expected_existing <- setdiff(intersect(names(previous$levels), names(current$levels)), reassigned)
-    expected_new <- union(setdiff(names(current$levels), names(previous$levels)), reassigned)
+    expected_existing <- intersect(names(previous$levels), names(current$levels))
+    expected_new <- setdiff(names(current$levels), names(previous$levels))
     testthat::expect_setequal(routing$prev_best_runs_tbl$combo, expected_existing)
     testthat::expect_setequal(routing$new_combos, vapply(expected_new, hash_data, character(1)))
     old_global <- previous_metadata$combo[previous_metadata$model_type == "global"]
@@ -385,5 +387,11 @@ check_update_node_chain <- function(approach, mode) {
     testthat::expect_true(all(metadata$model_type[metadata$combo %in% expected_new] == "local"))
     previous <- current
     previous_metadata <- metadata
+  }
+  if (identical(approach, "standard_hierarchy")) {
+    shifted <- make_update_node_parent(path, 5, approach,
+      rbind(base, data.frame(Region = "East", Product = "C")))
+    testthat::expect_error(initial_checks(shifted$agent),
+      "parent groups changed since Agent version 4", class = "finnts_hierarchy_change_error")
   }
 }

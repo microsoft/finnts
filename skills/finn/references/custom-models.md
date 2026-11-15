@@ -66,7 +66,7 @@ Never create, edit, copy, or delete files under `custom_models/` yourself.
    model has several saved versions and no `--version`, it returns `needs_input` with
    `data.versions`; ask which one. A model has at most one enrolled version.
 7. **Review before running.** Rerun `validate_config.R --project=<name>` and show
-   `data.settings_review`; its "Custom models" section lists each enrolled model and
+   `data.settings_review`; its "Your custom models" section lists each enrolled model and
    `data.settings_changes` shows enrollment changes.
 
 `--action=list` shows saved models, their versions, and which are enrolled.

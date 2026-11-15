@@ -17,11 +17,11 @@
 #'
 #' @details Character and factor combo boundaries are trimmed using the same
 #'   normalization as [prep_data()]. The caller's data is unchanged. Missing
-#'   combo values, including numeric `NaN`, form an `"NA"` label, as in
-#'   [prep_data()]. A column with both a missing value and the literal text
-#'   `"NA"` (after trimming), or with both numeric `NA` and `NaN`, is ambiguous
-#'   and produces an error.
-#'   Blank, infinite, or unsupported combo labels, ambiguous `"--"`-joined
+#'   combo values, including values left blank by trimming and numeric `NaN`,
+#'   form an `"NA"` label, as in [prep_data()]. A column with both a missing or
+#'   blank value and the literal text `"NA"` (after trimming), or with both
+#'   numeric `NA` and `NaN`, is ambiguous and produces an error.
+#'   Infinite or unsupported combo labels, ambiguous `"--"`-joined
 #'   combo identities, invalid cleanup inputs, and an empty retained population
 #'   produce errors.
 #'
@@ -86,9 +86,8 @@ detect_hierarchy <- function(input_data,
       (is.object(values) && !is.factor(values))) {
       stop("Unsupported combo column type: ", variable, call. = FALSE)
     }
-    if (any(!nzchar(stringr::str_trim(as.character(values))), na.rm = TRUE) ||
-      (is.numeric(values) && any(is.infinite(values)))) {
-      stop("Blank or nonfinite combo labels in: ", variable, call. = FALSE)
+    if (is.numeric(values) && any(is.infinite(values))) {
+      stop("Combo labels must be finite; found nonfinite values in: ", variable, call. = FALSE)
     }
   }
   input_data <- normalize_combo_values(input_data, combo_variables)

@@ -26,7 +26,11 @@ validate_prepared_input(
 \item{input_data}{A standard data frame, tibble, or spark data frame using sparklyr of historical time series data.
 Can also include external regressors for both historical and future data.
 Leading and trailing whitespace in character combo-variable values is
-removed before Finn creates internal series identifiers.}
+removed before Finn creates internal series identifiers. Values left blank
+are treated as missing; missing combo values form the \code{"NA"} label in
+series names. A combo column with both missing values and the text \code{"NA"}
+gives both the same label, so bottoms-up forecasts combine them and
+standard and grouped hierarchies stop with an error.}
 
 \item{combo_variables}{List of column headers within input data to be used to separate individual time series.}
 
@@ -113,18 +117,21 @@ Rules:
 \item \code{R3} the date column is named \code{Date} and has class Date.
 \item \code{R4} combo variables are not date columns.
 \item \code{R5} the target is numeric.
-\item \code{R6} combo values are not blank after trimming whitespace.
+\item \code{R6} reports combo columns with values that are blank after trimming
+whitespace. They are treated as missing values and form the \code{"NA"} label
+in series names. Always passes.
 \item \code{R7} each combo and \code{Date} pair appears once.
 \item \code{R8} month, quarter and year dates fall on one day of the month.
 \item \code{R9} \code{date_type} is valid and is not finer or coarser than the data.
 \item \code{R10} \code{fiscal_year_start} is a number from 1 to 12.
 \item \code{R11} Spark tables run with Spark parallel processing.
 \item \code{R12} standard and grouped hierarchies can name every series and map every
-external regressor: no grouped combo column mixes missing values with the
-text \code{"NA"} or numeric \code{NA} with \code{NaN}, no two series map to the same name
-after name cleanup, at least two series remain after \code{combo_cleanup_date},
-and no external regressor has \code{NaN}, infinite or conflicting values or an
-ambiguous source level. Always passes for \code{bottoms_up}.
+external regressor: no combo column mixes missing or blank values with the
+text \code{"NA"}, no grouped numeric combo column mixes \code{NA} with \code{NaN}, no two
+series map to the same name after name cleanup, at least two series remain
+after \code{combo_cleanup_date}, and no external regressor has \code{NaN}, infinite
+or conflicting values or an ambiguous source level. Always passes for
+\code{bottoms_up}.
 \item \code{P1} history end date and the rows treated as future periods.
 \item \code{P2} external regressors with future values and their coverage.
 \item \code{P3} missing periods that preparation pads.

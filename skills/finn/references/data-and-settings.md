@@ -7,7 +7,11 @@ For the required data layout, history length, and template, see
 
 Change settings only through `validate_config.R` and the user's approval. Show
 `data.settings_review` exactly as written; to propose a change, validate a draft
-config with `--config=<draft>` and show `data.settings_changes`. Key settings:
+config with `--config=<draft>` and show `data.settings_changes`. The review shows each
+setting once, with a plain label beside its exact name (for example "Back-test rounds
+(`back_test_scenarios`)"): core settings at a glance, settings that differ from Finn's
+defaults or always need a look grouped by category under "Settings to review", and the
+rest in a defaults table. Key settings:
 
 | setting | meaning |
 |---|---|
