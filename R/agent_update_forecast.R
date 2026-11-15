@@ -102,7 +102,13 @@
 #'   The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 #'   remain required. The completed predecessor, exact selected components,
 #'   current input signatures and replay controls are pinned before child fitting.
-#'   Replay retains full custom version IDs and per-series global subsets. Custom
+#'   Replay retains full custom version IDs and per-series global subsets. Every
+#'   enrolled custom model compatible with a series' winning local or global run
+#'   is also refit and returned beside the winner with `Best_Model = "No"`, even
+#'   when it did not win, so it can be compared with Finn's selected model. These
+#'   comparisons are never averaged into or substituted for the winner, do not
+#'   gate its acceptance and are excluded from update accuracy metrics; their
+#'   failures stop the update. Custom
 #'   logic is never regenerated or tuned; mixed retuning reuses fixed custom
 #'   results while retuning selected built-ins only. Temporal custom resampling
 #'   evaluates complete horizons from existing predictors but preserves the
@@ -1162,6 +1168,9 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #'   recovery decisions rather than requiring the unchanged predecessor choices.
 #' @param approach Saved forecast approach used to locate source and reconciled
 #'   predictions. Saved preparation supplies coverage keys, without being changed.
+#' @param comparison_ids Optional always-run custom model IDs saved beside the
+#'   winners; they are excluded from the rebuilt model-pool metrics so restarts
+#'   log the same winner-only statistics as a fresh update.
 #' @return TRUE when complete outputs were reused, otherwise FALSE to refit.
 #'   Missing completion records are rebuilt using existing settings and native
 #'   aggregate accuracy. No predictions, fits or matching best records are written.
@@ -1171,7 +1180,8 @@ read_update_result <- function(info, combos, global, horizon, approach = "bottom
 #' @noRd
 resume_update_result <- function(agent_info, info, combos, global, splits, components,
                                  approach = "bottoms_up", recipes = NULL, selected_ids = NULL,
-                                 previous_hierarchy = NULL, allow_selection_recovery = FALSE) {
+                                 previous_hierarchy = NULL, allow_selection_recovery = FALSE,
+                                 comparison_ids = character()) {
   saved <- read_update_result(info, combos, global, agent_info$forecast_horizon,
     approach, splits, recipes, selected_ids, previous_hierarchy, allow_selection_recovery)
   if (is.null(saved) || !all(components %in% saved$models$Model_ID)) return(FALSE)
@@ -1200,7 +1210,7 @@ resume_update_result <- function(agent_info, info, combos, global, splits, compo
     }
   }
   if (!length(missing)) return(TRUE)
-  rows <- saved$forecasts
+  rows <- saved$forecasts[!update_comparison_rows(saved$forecasts, comparison_ids), , drop = FALSE]
   rows$Run_Type <- splits$Run_Type[match(rows$Train_Test_ID, splits$Train_Test_ID)]
   native <- native_forecast_rows(rows, log$date_type)
   selections <- if (global && !identical(approach, "bottoms_up")) {
@@ -2557,8 +2567,12 @@ extend_global_update_selection <- function(selection, hierarchy) {
 # exact approved aliases/versions into preparation and preserves saved component
 # maps. Present incomplete outputs fail before preparation; valid outputs reuse
 # the logging tail. Fixed custom results are reused when built-ins need retuning.
-# Child preparation receives only selected custom envelopes, not unselected
-# parent enrollment; built-in-only winners retain ordinary preparation.
+# Child preparation receives selected and always-run comparison custom envelopes,
+# not other parent enrollment; built-in-only winners add C1 for those comparisons.
+# Every enrolled custom model compatible with the child's mode is refit from its
+# predecessor fit and published with Best_Model = "No" unless it is a winner
+# component. Comparisons are never averaged, never gate acceptance and are left
+# out of model-pool metrics; their failures and missing fits are hard errors.
 update_forecast_combo <- function(agent_info,
                                   prev_best_run_tbl,
                                   parallel_processing,
@@ -2638,12 +2652,23 @@ update_forecast_combo <- function(agent_info,
       unlist()
   }
 
-  prev_best_model_list <- model_id_list %>%
+  # Custom updates also refit every enrolled custom model compatible with this
+  # child's mode so it is published beside the saved winner for comparison.
+  # Global IDs that win elsewhere keep their winner role per series; local IDs
+  # exclude this series' winner. Non-custom updates refit only saved winners.
+  comparison_ids <- character()
+  if (!is.null(custom_contract)) {
+    comparison_ids <- agent_custom_comparison_ids(custom_contract, if (combo == "All-Data") "global" else "local")
+    if (combo != "All-Data") comparison_ids <- setdiff(comparison_ids, model_id_list)
+  }
+  refit_ids <- unique(c(model_id_list, comparison_ids))
+
+  prev_best_model_list <- refit_ids %>%
     stringr::str_replace("--.*$", "") %>%
     unique()
 
   # get best model recipes from previous run
-  prev_best_recipes <- sub(".*--", "", model_id_list) %>%
+  prev_best_recipes <- sub(".*--", "", refit_ids) %>%
     unique()
 
   # get trained models from previous run
@@ -2656,7 +2681,7 @@ update_forecast_combo <- function(agent_info,
       rlang::abort("Saved selected model fits are missing their component identities.",
         class = "finnts_update_artifact_error")
     }
-    trained_models_tbl <- dplyr::filter(trained_models_tbl, Model_ID %in% model_id_list)
+    trained_models_tbl <- dplyr::filter(trained_models_tbl, Model_ID %in% refit_ids)
   }
 
   if (is.null(trained_models_tbl)) {
@@ -2676,6 +2701,12 @@ update_forecast_combo <- function(agent_info,
         paste(missing_models, collapse = ", "), ". Restore the original selected fits before updating."),
         class = "finnts_update_artifact_error")
     }
+  }
+  missing_comparisons <- setdiff(comparison_ids, trained_models_tbl$Model_ID)
+  if (length(missing_comparisons)) {
+    rlang::abort(paste0("The previous Agent run did not save fits for every enrolled custom model: ",
+      paste(missing_comparisons, collapse = ", "), ". Start a new Agent version with iterate_forecast()."),
+      class = "finnts_update_artifact_error")
   }
 
   if (!is.null(custom_contract)) {
@@ -2889,7 +2920,7 @@ update_forecast_combo <- function(agent_info,
   if (resume_update_result(agent_info, new_run_info, combo_list, combo == "All-Data",
     model_train_test_tbl, model_id_list, prev_run_log_tbl$forecast_approach,
     paste(prev_best_recipes, collapse = "---"), selected_models$selected_ids, selected_models$hierarchy,
-    allow_selection_recovery = !is.null(selected_models$hierarchy))) {
+    allow_selection_recovery = !is.null(selected_models$hierarchy), comparison_ids = comparison_ids)) {
     return(list(status = "done", quality_rejected_combos = character()))
   }
 
@@ -2917,7 +2948,8 @@ update_forecast_combo <- function(agent_info,
       run_info = new_run_info,
       forecast_approach = prev_run_log_tbl$forecast_approach,
       negative_forecast = prev_run_log_tbl$negative_forecast,
-      selected_models = selected_models
+      selected_models = selected_models,
+      comparison_ids = comparison_ids
     )
 
   selection_log <- read_selection_file(new_run_info, "logs")
@@ -2929,7 +2961,8 @@ update_forecast_combo <- function(agent_info,
     expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
     cache = selection_cache, combos = combo_list, previous_hierarchy = selected_models$hierarchy,
     recover_global = !is.null(selected_models$hierarchy),
-    max_model_average = if (isTRUE(prev_run_log_tbl$average_models)) prev_run_log_tbl$max_model_average else 1L
+    max_model_average = if (isTRUE(prev_run_log_tbl$average_models)) prev_run_log_tbl$max_model_average else 1L,
+    comparison_ids = comparison_ids
   )
   quality_rejected <- assessment$quality_rejected_combos
   final_fcst_tbl <- assessment$forecasts
@@ -2972,7 +3005,8 @@ update_forecast_combo <- function(agent_info,
         run_info = new_run_info,
         forecast_approach = prev_run_log_tbl$forecast_approach,
         negative_forecast = prev_run_log_tbl$negative_forecast,
-        selected_models = selected_models
+        selected_models = selected_models,
+        comparison_ids = comparison_ids
       )
 
     # Retuning created a new path, so the first acceptance result cannot be reused.
@@ -2981,7 +3015,8 @@ update_forecast_combo <- function(agent_info,
       expected_components = if (is.null(selected_models)) model_id_list else selected_models$components,
       cache = selection_cache, combos = combo_list, previous_hierarchy = selected_models$hierarchy,
       recover_global = !is.null(selected_models$hierarchy),
-      max_model_average = if (isTRUE(prev_run_log_tbl$average_models)) prev_run_log_tbl$max_model_average else 1L
+      max_model_average = if (isTRUE(prev_run_log_tbl$average_models)) prev_run_log_tbl$max_model_average else 1L,
+      comparison_ids = comparison_ids
     )
     quality_rejected <- unique(c(quality_rejected, assessment$quality_rejected_combos))
     final_fcst_tbl <- assessment$forecasts
@@ -3158,7 +3193,8 @@ update_forecast_combo <- function(agent_info,
     saved_update = saved_update
   )
 
-  metric_fcst_tbl <- completed_fcst_tbl %>%
+  # Model-pool metrics describe the saved winner only, so comparisons are excluded.
+  metric_fcst_tbl <- completed_fcst_tbl[!update_comparison_rows(completed_fcst_tbl, comparison_ids), , drop = FALSE] %>%
     dplyr::left_join(model_train_test_tbl[, c("Train_Test_ID", "Run_Type")], by = "Train_Test_ID")
   final_log_results <- log_best_run(
     agent_info = agent_info,
@@ -3755,6 +3791,20 @@ average_update_forecasts <- function(rows, components) {
       Model_Type = "local", Recipe_ID = "simple_average", Hyperparameter_ID = NA_real_, Best_Model = "Yes")
 }
 
+# Flag always-run custom comparison rows in update forecasts. A row is a
+# comparison when its Model_ID is listed but is not a component of its series'
+# delivered winner (that series' Best_Model == "Yes" ID split on "_"). Takes rows
+# with Combo, Model_ID and Best_Model plus candidate IDs; returns a logical vector
+# aligned with rows. Comparisons remain published but never gate acceptance or
+# enter model-pool metrics. An empty ID set flags nothing. No I/O.
+update_comparison_rows <- function(rows, comparison_ids) {
+  if (!length(comparison_ids) || !nrow(rows)) return(rep(FALSE, nrow(rows)))
+  selected <- unique(rows[!is.na(rows$Best_Model) & rows$Best_Model == "Yes", c("Combo", "Model_ID"), drop = FALSE])
+  components <- strsplit(as.character(selected$Model_ID), "_", fixed = TRUE)
+  winners <- paste(rep(as.character(selected$Combo), lengths(components)), unlist(components), sep = "\t")
+  rows$Model_ID %in% comparison_ids & !paste(rows$Combo, rows$Model_ID, sep = "\t") %in% winners
+}
+
 #' Adjust Forecast After Model Fitting
 #'
 #' This function assembles fitted component and average forecasts before quality assessment and any hierarchical reconciliation.
@@ -3768,6 +3818,11 @@ average_update_forecasts <- function(rows, components) {
 #' @param selected_models Optional saved per-source selected IDs and components.
 #'   Hierarchical globals retain the full refitted pool, including new sources,
 #'   for subsequent recovery. Bottom-up reuse keeps only its saved components.
+#' @param comparison_ids Optional always-run custom model IDs published beside
+#'   each saved winner with `Best_Model = "No"`; they are never averaged or
+#'   selected. With `selected_models`, an ID that is one of a series' components
+#'   remains a winner component there. Without it, every listed ID is a
+#'   comparison, so callers exclude the saved winner's components.
 #'
 #' @return A tibble containing the adjusted forecast table.
 #' @noRd
@@ -3775,14 +3830,8 @@ adjust_forecast <- function(model_tbl,
                             run_info,
                             forecast_approach,
                             negative_forecast,
-                            selected_models = NULL) {
-  # check if forecasts should be averaged
-  if (nrow(model_tbl) > 1) {
-    simple_average <- TRUE
-  } else {
-    simple_average <- FALSE
-  }
-
+                            selected_models = NULL,
+                            comparison_ids = character()) {
   # extract out the forecast table
   forecast_tbl <- model_tbl %>%
     dplyr::select(-Model_Fit) %>%
@@ -3800,7 +3849,7 @@ adjust_forecast <- function(model_tbl,
     return(dplyr::bind_rows(lapply(combos, function(combo) {
       components <- selected_models$components[[combo]]
       rows <- forecast_tbl[forecast_tbl$Combo == combo &
-        (hierarchical | forecast_tbl$Model_ID %in% components), , drop = FALSE]
+        (hierarchical | forecast_tbl$Model_ID %in% c(components, comparison_ids)), , drop = FALSE]
       if (!nrow(rows)) return(rows)
       rows$Best_Model <- ifelse(length(components) == 1L & rows$Model_ID %in% components, "Yes", "No")
       if (length(components) <= 1L) return(rows)
@@ -3808,6 +3857,12 @@ adjust_forecast <- function(model_tbl,
       dplyr::bind_rows(rows, average)
     })))
   }
+
+  # comparisons are published beside the winner but never averaged or selected
+  comparison_rows <- forecast_tbl$Model_ID %in% comparison_ids
+  comparison_tbl <- forecast_tbl[comparison_rows, , drop = FALSE]
+  forecast_tbl <- forecast_tbl[!comparison_rows, , drop = FALSE]
+  simple_average <- nrow(model_tbl) - length(unique(comparison_tbl$Model_ID)) > 1
 
   if (simple_average) {
     # average the forecasts
@@ -3833,6 +3888,10 @@ adjust_forecast <- function(model_tbl,
   } else {
     final_fcst_tbl <- forecast_tbl %>%
       dplyr::mutate(Best_Model = "Yes")
+  }
+
+  if (nrow(comparison_tbl)) {
+    final_fcst_tbl <- dplyr::bind_rows(final_fcst_tbl, dplyr::mutate(comparison_tbl, Best_Model = "No"))
   }
 
   return(final_fcst_tbl)

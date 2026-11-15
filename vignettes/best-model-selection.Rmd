@@ -1078,7 +1078,11 @@ Compatible updates require an identically enrolled new parent, unchanged cadence
 regressors and enabled modes, and explicit `allow_iterate_forecast = FALSE`.
 The positive whole-number forecast horizon may change, subject to the approved
 rule's history and driver requirements.
-Successful series replay their saved winners and component subsets. New series
+Successful series replay their saved winners and component subsets. Every
+enrolled custom model compatible with a series' winning local or global run is
+also refit and published beside that winner with `Best_Model = "No"` for
+comparison. It is never averaged into or substituted for the winner, does not
+gate its acceptance and is excluded from update accuracy metrics. New series
 and recoverable built-in fitting or forecast-quality failures use Finn's existing
 default-local fallback, with all compatible current-version custom models added
 first, plus enrolled foundation models whose credentials are available. The

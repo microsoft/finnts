@@ -1389,10 +1389,14 @@ recover_global_update_source <- function(rows, series, splits, components,
 # occur here; the update writer records recovered identities before completion.
 # Missing historical delivery targets use the same original-scale prepared
 # history as selection, never invented zeros or future target placeholders.
+# Bottom-up comparison_ids name always-run custom models published beside each
+# saved winner: they are excluded from that series' quality assessment and
+# selection rankings, but their rows remain in the returned forecasts.
 assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
                                     expected_components = NULL, cache = new.env(parent = emptyenv()),
                                     combos = NULL, previous_hierarchy = NULL,
-                                    recover_global = FALSE, max_model_average = 1L) {
+                                    recover_global = FALSE, max_model_average = 1L,
+                                    comparison_ids = character()) {
   hierarchical <- !is.null(run_log[["forecast_approach"]]) && !identical(run_log$forecast_approach, "bottoms_up")
   hierarchy <- if (hierarchical) read_selection_hierarchy(run_info, cache) else NULL
   if (is.null(combos)) combos <- if (hierarchical) hierarchy$original_combos else unique(as.character(forecasts$Combo))
@@ -1430,9 +1434,10 @@ assess_update_forecasts <- function(forecasts, run_info, run_log, splits,
       source_rows[[combo]] <- choice$forecasts
       next
     }
-    selection <- select_series_forecasts(rows, series, splits)
-    selected_ids <- unique(rows$Model_ID[rows$Best_Model == "Yes"])
-    components <- unique(rows$Model_ID[!is.na(rows$Recipe_ID) & rows$Recipe_ID != "simple_average"])
+    assessed <- rows[!update_comparison_rows(rows, comparison_ids), , drop = FALSE]
+    selection <- select_series_forecasts(assessed, series, splits)
+    selected_ids <- unique(assessed$Model_ID[assessed$Best_Model == "Yes"])
+    components <- unique(assessed$Model_ID[!is.na(assessed$Recipe_ID) & assessed$Recipe_ID != "simple_average"])
     required_components <- if (is.list(expected_components)) expected_components[[combo]] else expected_components
     if (!is.null(required_components)) components <- unique(c(components, required_components))
     required <- unique(c(components, selected_ids))
