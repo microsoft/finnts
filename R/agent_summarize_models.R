@@ -612,7 +612,9 @@ summarize_models <- function(agent_info,
       }
 
       # Get forecast data to identify best models by reading specific files
-      # directly; re-read like the models above while none are visible
+      # directly. Re-read like the models above until this combo's selected
+      # model is visible: a mount can return the copy train_models() wrote
+      # before selection or miss the winning average file
       forecast_tbl <- read_settled(function() {
         if (model_type == "global") {
           # Try to read global models forecast file
@@ -713,7 +715,10 @@ summarize_models <- function(agent_info,
           )))
         }
         forecast_tbl
-      }, function(forecasts) nrow(forecasts) > 0, project_info$path, paste("forecasts for", combo))
+      }, function(forecasts) {
+        "Best_Model" %in% names(forecasts) &&
+          any(forecasts$Combo == combo & forecasts$Best_Model == "Yes", na.rm = TRUE)
+      }, project_info$path, paste("forecasts for", combo))
 
       if (nrow(forecast_tbl) == 0) {
         stop(paste0("No forecast data found to determine best models for combo: ", combo), call. = FALSE)

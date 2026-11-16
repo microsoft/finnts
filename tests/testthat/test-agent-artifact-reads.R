@@ -387,6 +387,40 @@ test_that("model summaries re-read model and forecast files not yet visible on m
   expect_true(all(result$Best_Model == "Yes"))
 })
 
+test_that("model summaries re-read a stale forecast copy that has no selected model yet", {
+  agent_info <- artifact_test_agent(withr::local_tempdir())
+  best_runs <- artifact_test_selected_models(agent_info)
+  local_artifact_summary_mocks(best_runs)
+  original_read <- read_file
+  stale <- character()
+  # A mount can return a non-empty forecast copy without this series' winner:
+  # A gets train_models()' copy, which has no Best_Model column, and B a copy
+  # whose winning average file is not visible yet, so every row is "No".
+  testthat::local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    read_file = function(run_info, path = NULL, ...) {
+      value <- original_read(run_info, path = path, ...)
+      if (!is.null(path) && grepl("/forecasts/.*-single_models\\.", path) && !path %in% stale) {
+        stale <<- c(stale, path)
+        if (identical(value$Combo[[1]], "A")) value$Best_Model <- NULL else value$Best_Model <- "No"
+      }
+      value
+    },
+    .package = "finnts"
+  )
+
+  messages <- character()
+  withCallingHandlers(summarize_models(agent_info), message = function(condition) {
+    messages <<- c(messages, conditionMessage(condition))
+    invokeRestart("muffleMessage")
+  })
+  expect_length(stale, 2L)
+  expect_identical(sum(grepl("^Re-reading forecasts for [AB]:", messages)), 2L)
+  result <- get_summarized_models(agent_info)
+  expect_setequal(result$Combo, c("A", "B"))
+  expect_true(all(result$Best_Model == "Yes"))
+})
+
 test_that("model summary consolidation fails on a missing expected write", {
   agent_info <- artifact_test_agent(withr::local_tempdir())
   best_runs <- artifact_test_selected_models(agent_info)
