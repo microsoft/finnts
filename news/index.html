@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9023</span>
       </span>
     </div>
 
@@ -100,9 +100,9 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9022" id="finnts-0709022-development-version">finnts 0.7.0.9022 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709022-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9023" id="finnts-0709023-development-version">finnts 0.7.0.9023 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709023-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9022">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9022"></a></h3>
+<h3 id="improvements-0-7-0-9023">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9023"></a></h3>
 <ul><li>
 <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> creates reusable local/global forecasting models from business rules, validated against worked examples.
 <ul><li>Approval is manual in interactive sessions or automatic.</li>
@@ -133,10 +133,26 @@
 <li>For hierarchies, also checks every series and external regressor can be prepared, with <code><a href="../reference/prep_data.html">prep_data()</a></code> errors.</li>
 <li>Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.</li>
 </ul></li>
+<li>
+<code>inner_parallel = TRUE</code> again tunes and refits models in parallel with tune 2.x, reusing the existing worker pool.
+<ul><li>Local worker pools stop and the caller’s <code>future</code> plan is restored when each step finishes, fails or is cancelled.</li>
+<li>When series run one after another, worker processes now start once and are reused instead of restarting per series.</li>
+<li>Pools are sized to the available work and respect <code>num_cores</code> and container CPU limits.</li>
+<li>On Spark, each series starts one pool, shared by its feature selection, training and Agent iterations.</li>
+<li>On Spark, each series’ inner workers share its executor node’s cores; see the parallel processing vignette.</li>
+</ul></li>
+<li>Simple model averages are computed up to 50 times faster, with identical results.</li>
+<li>
+<code><a href="../reference/prep_data.html">prep_data()</a></code> on Spark no longer preps partial series to infer its output columns, skipping one Spark job.</li>
+<li>Drops the <code>plyr</code> and <code>gtools</code> dependencies; average model IDs and combined CSV reads are unchanged.</li>
+<li>Automatic MARS tuning skips exhaustive pruning, which can exceed 15 minutes per fit; MARS grids and forecasts change once.
+<ul><li>Saved runs keep their chosen pruning when <code><a href="../reference/update_forecast.html">update_forecast()</a></code> refits without retuning.</li>
+</ul></li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9022">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9022"></a></h3>
-<ul><li>Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
+<h3 id="bug-fixes-0-7-0-9023">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9023"></a></h3>
+<ul><li>Models failing on every validation or back-test split now report the underlying error, not a missing <code>.pred</code> column.</li>
+<li>Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
 <ul><li>Missing values form the <code>"NA"</code> group already used in combo and hierarchy names, so series names and hashes are unchanged.</li>
 <li>A combo column with both missing values and literal <code>"NA"</code> text now errors instead of merging them.</li>
 <li>Previously reconciliation failed with <code>'i' and 'j' must not contain NA</code> after every model had trained.</li>
@@ -249,6 +265,37 @@
 <li>Earlier versions remain replay context; external-regressor exploration has no separate cap beyond the overall iteration limit.</li>
 <li>Canonical lag, rolling-window, and seasonal-period settings prevent reordered, default, or previously tested configurations consuming additional changes.</li>
 <li>Finalization and verification avoid repeated listings; best-run listing failures propagate as storage errors.</li>
+<li>Multistep models no longer silently lose back-test refits on inner-parallel workers that had not loaded finnts.</li>
+<li>Fixed a bug in leave-one-feature-out (LOFO) feature selection; it now works for monthly, quarterly and yearly local models.</li>
+<li>Selected features, forecasts and runtimes change for these feature-selection runs; existing saved runs are unchanged.</li>
+<li>LOFO is the slowest selection step; <code>inner_parallel = TRUE</code> runs it in parallel.</li>
+<li>LOFO now respects <code>num_cores</code> and shares the inner worker pool.</li>
+<li>Simple model averages are no longer silently dropped when an inner-parallel worker fails, which could change the selected model.</li>
+<li>Failed averages are recomputed in the main process with a warning.</li>
+<li>Replaced deprecated <code><a href="https://dials.tidymodels.org/reference/grid_max_entropy.html" class="external-link">dials::grid_latin_hypercube()</a></code> and timetk rolling-window calls that relied on deprecated <code><a href="https://purrr.tidyverse.org/reference/cross.html" class="external-link">purrr::cross_df()</a></code>.</li>
+<li>Prepared features and ensemble grids are unchanged, except with <code>num_hyperparameters = 1</code>, where ensembles pick their setting like individual models. - Results remain reproducible for a given seed.</li>
+<li>Fixed <code><a href="../reference/prep_data.html">prep_data()</a></code> on Spark failing at its final step when <code>stationary</code> or <code>box_cox</code> is on.</li>
+<li>The default <code>stationary = TRUE</code> was affected; Agent workflows were not.</li>
+<li>Spark step reconnects now reuse the original connection method, such as <code>"synapse"</code> or <code>"databricks"</code>, and app name.</li>
+<li>C1 source fingerprints from Spark-table input now match local input, so prep no longer reports false source changes.</li>
+<li>Standard C1 runs first prepped from a Spark table before this fix need a new run.</li>
+<li>
+<code><a href="../reference/get_forecast_data.html">get_forecast_data()</a></code> and <code><a href="../reference/final_models.html">final_models()</a></code> no longer fail on Parquet runs with model averages; saved files are unchanged.</li>
+<li>Parquet outputs no longer fail on Windows when <code><a href="../reference/final_models.html">final_models()</a></code> rewrites forecasts it just read.</li>
+<li>On Synapse and Databricks mounts, outputs Spark tasks just wrote are re-read briefly when missing or out of date.</li>
+<li>Avoids intermittent “missing a best model” and “No trained models found” Agent retries.</li>
+<li>Model summaries wait for each series’ chosen model instead of failing on an old forecast copy.</li>
+<li>Multistep glmnet, xgboost, cubist, mars and svm models now train when finnts is loaded but not attached.</li>
+<li>Previously they were silently dropped, for example in <code>finnts::</code> calls or background jobs.</li>
+<li>Inner parallel pools now start on a free port, so concurrent Spark tasks no longer fail on port clashes.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="breaking-changes-0-7-0-9023">Breaking Changes<a class="anchor" aria-label="anchor" href="#breaking-changes-0-7-0-9023"></a></h3>
+<ul><li>Requires R 4.1 and tune 2.0.1 or later; minimum dials, parsnip, recipes, rsample and workflows versions also rise.</li>
+<li>Adds <code>future</code>, <code>future.apply</code> and <code>parallelly</code> imports; all were already installed through existing dependencies.</li>
+<li>Forecasts may shift once when upgrading from tune 1.x, because tune 2.x seeds resampling differently.</li>
+<li>Upgrade Spark cluster libraries to these versions before installing this finnts version.</li>
+<li>Custom models may declare <code>future</code>, <code>future.apply</code> and <code>parallelly</code>, but no longer <code>plyr</code> or <code>gtools</code>; re-register any that did.</li>
 </ul></div>
 </div>
     <div class="section level2">

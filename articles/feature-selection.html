@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9023</span>
       </span>
     </div>
 
@@ -179,9 +179,14 @@ accuracy gets worse by removing the feature, it gets flagged as an
 important feature. This is not a recursive feature elimination process,
 instead only one feature is ever held out at any point in time.</p>
 <p>This technique is used for yearly, quarterly, and monthly data. It’s
-turned off for daily or weekly data since it would take too long to run
+turned off for daily or weekly data, and for global models trained
+across multiple time series, since it would take too long to run
 properly. If a feature engineering recipe contains more than 250
 features, lofo is also turned off to keep runtime low.</p>
+<p>Lofo refits three models for every feature on each validation split,
+so it’s the slowest feature selection technique. When
+<code>inner_parallel</code> is set to TRUE, those refits run in parallel
+across the cores of the local machine or Spark executor.</p>
 </div>
 <div class="section level3">
 <h3 id="boruta">Boruta<a class="anchor" aria-label="anchor" href="#boruta"></a>

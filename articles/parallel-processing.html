@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9023</span>
       </span>
     </div>
 
@@ -145,10 +145,21 @@ scenarios where cloud computing is not available.</p>
 <p>If <code>parallel_processing</code> is set to NULL and
 <code>inner_parallel</code> is set to TRUE within
 <code>forecast_time_series</code>, then each time series is ran
-sequentially but the hyperparameter tuning, model refitting, and model
-averaging is ran in parallel. This works great for data that has a
-limited number of time series where you want to run a lot of back
-testing and build dozens of models within Finn.</p>
+sequentially but the hyperparameter tuning and model refitting are ran
+in parallel. This works great for data that has a limited number of time
+series where you want to run a lot of back testing and build dozens of
+models within Finn.</p>
+<p>With <code>inner_parallel</code> set to TRUE, Finn starts one pool of
+worker processes, reuses it across time series and modeling steps, and
+lets the tune package use it by temporarily registering it as the
+<code>future</code> plan. Finn restores your own <code>future</code>
+plan when the run finishes. The pool has at most <code>num_cores</code>
+workers (by default every available core but one, respecting container
+CPU limits), and never more than a modeling step can use: the
+hyperparameter combinations times the validation splits, or the number
+of back-test splits. Each worker needs roughly 400 MB of memory before
+any data is loaded, so leave enough memory headroom when choosing
+<code>num_cores</code>.</p>
 </div>
 <div class="section level2">
 <h2 id="parallel-ai-agent-workflows">Parallel AI Agent Workflows<a class="anchor" aria-label="anchor" href="#parallel-ai-agent-workflows"></a>
@@ -207,12 +218,8 @@ on Azure Synapse</a>.</p>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://microsoft.github.io/finnts/">finnts</a></span><span class="op">)</span></span>
 <span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://spark.posit.co/" class="external-link">sparklyr</a></span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/install.packages.html" class="external-link">install.packages</a></span><span class="op">(</span><span class="st">"qs"</span><span class="op">)</span></span>
-<span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va">qs</span><span class="op">)</span></span>
-<span></span>
 <span><span class="co"># connect to spark cluster</span></span>
 <span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>sparklyr.log.console <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/base/options.html" class="external-link">options</a></span><span class="op">(</span>sparklyr.spark_apply.serializer <span class="op">=</span> <span class="st">"qs"</span><span class="op">)</span> <span class="co"># uses the qs package to improve data serialization before sending to spark cluster</span></span>
 <span></span>
 <span><span class="va">sc</span> <span class="op">&lt;-</span> <span class="fu">sparklyr</span><span class="fu">::</span><span class="fu">spark_connect</span><span class="op">(</span>method <span class="op">=</span> <span class="st">"databricks"</span><span class="op">)</span></span>
 <span></span>
@@ -246,22 +253,75 @@ on Azure Synapse</a>.</p>
 <span>  return_type <span class="op">=</span> <span class="st">"sdf"</span></span>
 <span><span class="op">)</span></span></code></pre></div>
 <p>The above example runs each time series on a separate core on a spark
-cluster. You can also submit multiple time series where each time series
-runs on a separate spark executor (VM) and then leverage all of the
-cores on that executor to run things like hyperparameter tuning or model
-refitting in parallel. This creates two levels of parallelization. One
-at the time series level, then another when doing things like
-hyperparameter tuning within a specific time series. To do that set
+cluster. On an Azure Synapse Spark pool, connect to the pool’s Spark
+installation instead, and give <code><a href="../reference/set_run_info.html">set_run_info()</a></code> a path under
+your ADLS mount, which starts with <code>/synfs</code>:</p>
+<div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">sc</span> <span class="op">&lt;-</span> <span class="fu">sparklyr</span><span class="fu">::</span><span class="fu">spark_connect</span><span class="op">(</span></span>
+<span>  master <span class="op">=</span> <span class="st">"yarn"</span>,</span>
+<span>  version <span class="op">=</span> <span class="st">"3.5"</span>,</span>
+<span>  spark_home <span class="op">=</span> <span class="st">"/opt/spark"</span>,</span>
+<span>  config <span class="op">=</span> <span class="fu">sparklyr</span><span class="fu">::</span><span class="fu">spark_config</span><span class="op">(</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Mount ADLS with <code>fileCacheTimeout = 0</code>. The default mount
+caches file listings and contents for 120 seconds, so outputs that one
+node just wrote can look missing or out of date on another. Finn waits
+and reads such outputs again, but a mount without the cache avoids that
+wait; in our Synapse tests it didn’t slow runs down.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu">mssparkutils.fs.mount</span><span class="op">(</span></span>
+<span>  <span class="st">"abfss://&lt;container&gt;@&lt;storage account&gt;.dfs.core.windows.net"</span>,</span>
+<span>  <span class="st">"/finn"</span>,</span>
+<span>  <span class="fu"><a href="https://rdrr.io/r/base/list.html" class="external-link">list</a></span><span class="op">(</span>linkedService <span class="op">=</span> <span class="st">"&lt;linked service&gt;"</span>, fileCacheTimeout <span class="op">=</span> <span class="fl">0</span><span class="op">)</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="va">run_info</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/set_run_info.html">set_run_info</a></span><span class="op">(</span></span>
+<span>  project_name <span class="op">=</span> <span class="st">"finn_fcst"</span>,</span>
+<span>  run_name <span class="op">=</span> <span class="st">"spark_run_1"</span>,</span>
+<span>  path <span class="op">=</span> <span class="fu">mssparkutils.fs.getMountPath</span><span class="op">(</span><span class="st">"/finn"</span><span class="op">)</span></span>
+<span><span class="op">)</span></span></code></pre></div>
+<p>Finn reconnects to Spark at the start of each Spark step, reusing the
+connection’s method and configuration. By default sparklyr then copies
+the driver’s R packages to the executors again before the step’s first
+task. When every executor already has the same R package library as the
+driver, such as a Synapse Spark pool or a Databricks cluster with the
+packages installed on the pool or cluster, you can skip that copy by
+adding <code>config$sparklyr.apply.packages &lt;- FALSE</code> to the
+connection config. Keep the default when executors may be missing
+packages, because their tasks would fail when loading Finn.</p>
+<p>Spark 3.5 works with sparklyr 1.8.6, the version installed on Synapse
+Spark 3.5 pools. Spark 4 needs sparklyr 1.9.1 or later.</p>
+<p>You can also submit multiple time series where each time series runs
+on a separate spark executor (VM) and then leverage the cores on that
+executor to run things like hyperparameter tuning or model refitting in
+parallel. This creates two levels of parallelization. One at the time
+series level, then another when doing things like hyperparameter tuning
+within a specific time series. To do that set
 <code>inner_parallel</code> to TRUE in
-<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>. Also make sure that you adjust the
-number of spark executor cores to 1, that ensures that only 1 time
-series runs on an executor at a time. Leverage the
-“spark.executor.cores” argument when configuring your spark connection.
-This can be done using <a href="https://spark.posit.co/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below." class="external-link">sparklyr</a>
-or within the cluster manager itself within the Azure resource. Use the
-“num_cores” argument in the “forecast_time_series” function to control
-how many cores should be used within an executor when running things
-like hyperparameter tuning.</p>
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code>.</p>
+<p>Spark runs <code>spark.executor.cores</code> time series at once on
+each executor (divided by <code>spark.task.cpus</code> when that is
+set). It doesn’t limit the cores an R process can use, so when
+<code>num_cores</code> is NULL, Finn gives each time series an equal
+share of the executor node’s cores, minus one for the series itself. On
+32-core nodes, <code>spark.executor.cores</code> set to 1 gives each
+series about 31 inner workers, and 2 gives two series about 15 workers
+each. Use 1 for heavy work within each series, such as large
+hyperparameter grids, many back tests or feature selection, and 2 or
+more to run more series at once. If <code>spark.executor.cores</code>
+isn’t set (Databricks runs one series per core by default), there are no
+spare cores and each series uses a single inner worker. Set it with the
+“spark.executor.cores” argument when configuring your spark connection,
+using <a href="https://spark.posit.co/guides/connections#:~:text=In%20sparklyr%2C%20Spark%20properties%20can%20be%20set%20by,customized%20as%20shown%20in%20the%20example%20code%20below." class="external-link">sparklyr</a>
+or the cluster manager within the Azure resource. This sizing assumes
+one executor per node and a driver with the same node size as the
+executors; otherwise set <code>num_cores</code> in
+<code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> to the number of inner workers each
+series should use.</p>
+<p>Inner workers run outside the Spark JVM, so they share only the node
+memory Spark doesn’t reserve. For example, with
+<code>spark.executor.memory = "220g"</code> on a 252 GB node, about 30
+GB remains for all inner workers on that node.</p>
 <p><code><a href="../reference/forecast_time_series.html">forecast_time_series()</a></code> will be looking for a variable
 called “sc” to use when submitting tasks to the spark cluster, so make
 sure you use that as the variable name when connecting to spark. Also
@@ -269,6 +329,10 @@ it’s important that you mount your spark session to an Azure Data Lake
 Storage (ADLS) account, and provide the mounted path to where you’d like
 your Finn results to be written to within
 <code><a href="../reference/set_run_info.html">set_run_info()</a></code>.</p>
+<p>Spark executors run Finn with their own R package library. Before
+installing a new version of Finn on a cluster, upgrade that library to
+the minimum package versions listed in Finn’s DESCRIPTION file,
+including tune 2.0.1 or later.</p>
 </div>
   </div>
 
