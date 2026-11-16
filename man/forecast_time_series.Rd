@@ -214,7 +214,7 @@ no model is automatically added and no requested approach is changed.
 \examples{
 \donttest{
 
-run_info <- set_run_info()
+run_info <- set_run_info(run_name = "forecast_time_series_example")
 
 finn_forecast <- forecast_time_series(
   run_info = run_info,

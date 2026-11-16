@@ -1,6 +1,7 @@
 test_that("installed mixed custom updates preserve choices on two real workers", {
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Real custom update dispatch is verified from the installed namespace")
+  skip_if_fewer_workers(2)
   withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
   path <- withr::local_tempdir()
   data <- data.frame(Date = rep(seq(as.Date("2020-01-01"), by = "month", length.out = 24), 2),

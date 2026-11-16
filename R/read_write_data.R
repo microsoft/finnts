@@ -28,7 +28,7 @@
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_forecast_data_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -223,7 +223,7 @@ get_forecast_data <- function(run_info,
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_trained_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -296,7 +296,7 @@ get_trained_models <- function(run_info) {
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_prepped_data_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -379,7 +379,7 @@ get_prepped_data <- function(run_info,
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_prepped_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,

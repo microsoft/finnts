@@ -89,7 +89,7 @@
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "prep_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,

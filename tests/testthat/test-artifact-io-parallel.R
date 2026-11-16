@@ -149,6 +149,7 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
   skip_if_not(file.exists(file.path(package_path, "Meta", "package.rds")),
     "Actual training dispatch is verified from the installed namespace"
   )
+  skip_if_fewer_workers(2)
   withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
   template <- set_run_info(project_name = "artifact_dispatch", run_name = "test",
     path = withr::local_tempdir(), data_output = "csv", object_output = "rds", add_unique_id = FALSE
@@ -186,13 +187,16 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
     asNamespace("finnts")
     tracker <- new.env(parent = emptyenv())
     tracker$recipe_reads <- character()
+    tracker$csv_reads <- character()
     tracker$listings <- 0L
-    root <- paste0(gsub("\\", "/", root, fixed = TRUE), "/")
+    # resolve symlinks such as macOS /var -> /private/var on both sides
+    canonical <- function(path) normalizePath(as.character(path), winslash = "/", mustWork = FALSE)
+    root <- paste0(canonical(root), "/")
     original_dir_ls <- fs::dir_ls
     original_list_files <- list.files
     original_read <- vroom::vroom
     record_directory <- function(path) {
-      if (any(startsWith(paste0(gsub("\\", "/", as.character(path), fixed = TRUE), "/"), root))) {
+      if (any(startsWith(paste0(canonical(path), "/"), root))) {
         tracker$listings <- tracker$listings + 1L
         stop("training worker enumerated an artifact directory", call. = FALSE)
       }
@@ -214,7 +218,8 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
     testthat::local_mocked_bindings(
       vroom = function(file, ...) {
         if (is.character(file)) {
-          paths <- gsub("\\", "/", as.character(file), fixed = TRUE)
+          paths <- canonical(file)
+          tracker$csv_reads <- c(tracker$csv_reads, paths)
           tracker$recipe_reads <- c(tracker$recipe_reads,
             paths[startsWith(paths, root) & grepl("-R[12]\\.csv$", paths)])
         }
@@ -228,7 +233,8 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
   environment(install_guard) <- baseenv()
   collect_guard <- function() {
     tracker <- get("finnts_training_io", envir = globalenv())
-    list(pid = Sys.getpid(), recipe_reads = tracker$recipe_reads, listings = tracker$listings)
+    list(pid = Sys.getpid(), recipe_reads = tracker$recipe_reads, csv_reads = tracker$csv_reads,
+      listings = tracker$listings)
   }
   environment(collect_guard) <- baseenv()
   original_start <- par_start
@@ -264,9 +270,12 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
   expect_equal(length(unique(vapply(reports, function(report) report$pid, integer(1)))), 2L)
   expect_equal(sum(vapply(reports, function(report) report$listings, integer(1))), 0L)
   recipe_reads <- unlist(lapply(reports, function(report) report$recipe_reads), use.names = FALSE)
-  expect_setequal(recipe_reads, vapply(c("A", "B"), function(combo) {
-    as.character(artifact_test_path(parallel_info, "prep_data", combo, "-R1"))
-  }, character(1)))
+  csv_reads <- unlist(lapply(reports, function(report) report$csv_reads), use.names = FALSE)
+  expected_reads <- vapply(c("A", "B"), function(combo) {
+    normalizePath(as.character(artifact_test_path(parallel_info, "prep_data", combo, "-R1")), winslash = "/")
+  }, character(1), USE.NAMES = FALSE)
+  expect_equal(sort(recipe_reads), sort(expected_reads),
+    info = paste("CSV files read by workers:", paste(csv_reads, collapse = ", ")))
   expect_length(recipe_reads, 2L)
   for (combo in c("A", "B")) {
     expected <- read_file(sequential_info,

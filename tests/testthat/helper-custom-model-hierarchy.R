@@ -102,7 +102,9 @@ hierarchy_expect_forecast <- function(approach) {
   })
   expect_identical(tools::md5sum(files), before)
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
-  if (approach == "grouped_hierarchy" && file.exists(file.path(namespace, "Meta", "package.rds"))) {
+  # the parallel check needs two workers, which the CRAN profile's core limit doesn't allow
+  if (approach == "grouped_hierarchy" && file.exists(file.path(namespace, "Meta", "package.rds")) &&
+    get_cores(NULL) >= 2L) {
     withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
     parallel_args <- args
     parallel_args$run_info <- set_run_info(
