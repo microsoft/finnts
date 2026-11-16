@@ -138,6 +138,9 @@ get_forecast_data <- function(run_info,
 
   # Files are listed once before reading: a finished Spark stage's forecasts can
   # be stale on a mount, and read_settled() then repeats only the read below.
+  # Spark tables ("sdf") are read by Spark from storage, not through the mount,
+  # so they keep the single wildcard-path read.
+  settle <- identical(return_type, "df")
   read_forecasts <- if (local_hierarchy) {
     reconciled_files <- unique(c(
       local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
@@ -165,7 +168,7 @@ get_forecast_data <- function(run_info,
     }
   } else {
     # the same listing read_file() would run; provider runs still download per read
-    forecast_files <- if (is.null(run_info$storage_object) && !is.null(run_info$path)) {
+    forecast_files <- if (settle && is.null(run_info$storage_object) && !is.null(run_info$path)) {
       list_files(NULL, fs::path(run_info$path, fcst_path))
     }
     function() {
@@ -176,7 +179,11 @@ get_forecast_data <- function(run_info,
       )
     }
   }
-  forecast_tbl <- read_settled(read_forecasts, best_models_complete, run_info$path, "final forecasts")
+  forecast_tbl <- if (settle) {
+    read_settled(read_forecasts, best_models_complete, run_info$path, "final forecasts")
+  } else {
+    read_forecasts()
+  }
   forecast_tbl <- forecast_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
