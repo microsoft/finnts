@@ -12,12 +12,20 @@ parallel_util_worker_pids <- function(cl) {
 
 # Report which of `pids` still run, waiting up to `wait` seconds for stopped
 # workers to exit. A stopped cluster's connection numbers can be reused by the
-# next pool, so process state is the reliable check. Returns a logical vector.
+# next pool, so process state is the reliable check. Uses base tools only:
+# `tasklist` on Windows (where tools::pskill() always terminates), signal 0
+# elsewhere (checks existence without signalling). Returns a logical vector.
 parallel_util_running <- function(pids, wait = 10) {
-  testthat::skip_if_not_installed("ps")
-  running <- function() vapply(pids, function(pid) {
-    isTRUE(tryCatch(ps::ps_is_running(ps::ps_handle(pid)), error = function(e) FALSE))
-  }, logical(1))
+  alive <- function(pid) {
+    if (.Platform$OS.type == "windows") {
+      rows <- suppressWarnings(system2("tasklist",
+        c("/FI", shQuote(paste("PID eq", pid)), "/NH", "/FO", "CSV"), stdout = TRUE, stderr = FALSE))
+      any(grepl(paste0("\"", pid, "\""), rows, fixed = TRUE))
+    } else {
+      isTRUE(tools::pskill(pid, 0L))
+    }
+  }
+  running <- function() vapply(pids, alive, logical(1))
   deadline <- Sys.time() + wait
   state <- running()
   while (any(state) && Sys.time() < deadline) {

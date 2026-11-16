@@ -205,7 +205,7 @@ prep_data_orig_combo_info <- function(spark, data_output, box_cox, stationary, c
 
   if (spark) {
     testthat::skip_if_not_installed("sparklyr")
-    vctrs::s3_register("dplyr::collect", "prep_data_fake_sdf", function(x, ...) x$data)
+    registerS3method("collect", "prep_data_fake_sdf", function(x, ...) x$data, envir = asNamespace("dplyr"))
     before <- ls(.GlobalEnv, all.names = TRUE)
     withr::defer(rm(list = setdiff(ls(.GlobalEnv, all.names = TRUE), before), envir = .GlobalEnv))
     assign("sc", structure(list(), class = "spark_connection"), envir = .GlobalEnv)

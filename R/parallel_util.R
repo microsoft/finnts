@@ -589,7 +589,9 @@ reset_spark <- function() {
 
   sparklyr::spark_disconnect(sc)
 
-  assign("sc", do.call(sparklyr::spark_connect, args), envir = .GlobalEnv)
+  # `sc` must stay global: finnts and doSpark look the connection up there
+  fn_env <- .GlobalEnv
+  assign("sc", do.call(sparklyr::spark_connect, args), envir = fn_env)
 
   # check spark session is running
   if (!sparklyr::connection_is_open(sc)) {
