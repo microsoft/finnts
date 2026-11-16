@@ -1282,3 +1282,31 @@ test_that("uniform global and legacy local assembly retain their component arith
   expect_equal(dplyr::arrange(local_single[, columns], Combo, Train_Test_ID, Date),
     dplyr::arrange(tibble::as_tibble(fitted$Forecast_Tbl[[1]][, columns]), Combo, Train_Test_ID, Date))
 })
+
+test_that("update assembly publishes custom comparisons without averaging or selecting them", {
+  fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.02))
+  forecasts <- dplyr::bind_rows(fixture$backtests, fixture$forecasts)
+  forecasts$Combo <- "series"
+  forecasts$Run_Type <- fixture$context$train_test_split$Run_Type[
+    match(forecasts$Train_Test_ID, fixture$context$train_test_split$Train_Test_ID)]
+  fitted <- make_fitted_selection_models(forecasts, c("xgboost", "chronos2", "comparison"))
+  fitted$Model_Type <- "local"
+  fitted$Combo_ID <- "series"
+  comparison <- "comparison--local--R1"
+  average <- adjust_forecast(fitted, list(), "bottoms_up", FALSE, comparison_ids = comparison)
+  expect_setequal(unique(average$Model_ID), c("xgboost--local--R1", "chronos2--local--R1", comparison,
+    "chronos2--local--R1_xgboost--local--R1"))
+  expect_identical(unique(average$Model_ID[average$Best_Model == "Yes"]), "chronos2--local--R1_xgboost--local--R1")
+  expect_true(all(average$Best_Model[average$Model_ID == comparison] == "No"))
+  single <- adjust_forecast(fitted[c(1, 3), ], list(), "bottoms_up", FALSE, comparison_ids = comparison)
+  expect_identical(unique(single$Model_ID[single$Best_Model == "Yes"]), "xgboost--local--R1")
+  expect_false(any(single$Recipe_ID == "simple_average"))
+  expect_true(all(single$Best_Model[single$Model_ID == comparison] == "No"))
+  fitted$Model_Type <- "global"
+  fitted$Combo_ID <- "All-Data"
+  mapping <- list(selected_ids = c(series = "xgboost--global--R1"), components = list(series = "xgboost--global--R1"))
+  mapped <- adjust_forecast(fitted, list(), "bottoms_up", FALSE, selected_models = mapping,
+    comparison_ids = c("xgboost--global--R1", "comparison--global--R1"))
+  expect_setequal(unique(mapped$Model_ID), c("xgboost--global--R1", "comparison--global--R1"))
+  expect_identical(unique(mapped$Model_ID[mapped$Best_Model == "Yes"]), "xgboost--global--R1")
+})

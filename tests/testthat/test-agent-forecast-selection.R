@@ -23,6 +23,27 @@ test_that("update assessment preserves healthy series and rejects a bad sibling"
   expect_identical(result$quality_rejected_combos, hash_data("bad"))
 })
 
+test_that("update assessment never lets a custom comparison reject the saved winner", {
+  fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
+  series <- fixture$context
+  series$history <- fixture$history
+  local_mocked_bindings(read_series_history = function(...) series)
+  rows <- dplyr::bind_rows(fixture$backtests, fixture$forecasts) %>%
+    dplyr::mutate(Combo = "healthy", Best_Model = "Yes", Recipe_ID = "R1")
+  comparison_id <- "custom-comparison--local--C1"
+  comparison <- rows %>% dplyr::mutate(Model_ID = comparison_id, Recipe_ID = "C1", Best_Model = "No",
+    Forecast = ifelse(Train_Test_ID == 1, 1e8, Forecast))
+  candidates <- dplyr::bind_rows(rows, comparison)
+  splits <- fixture$context$train_test_split
+  expect_identical(assess_update_forecasts(candidates, list(), list(), splits)$quality_rejected_combos,
+    hash_data("healthy"))
+  result <- assess_update_forecasts(candidates, list(), list(), splits, comparison_ids = comparison_id)
+  expect_length(result$quality_rejected_combos, 0L)
+  expect_setequal(unique(result$forecasts$Model_ID), c("only", comparison_id))
+  expect_identical(result$selections$healthy$selected_id, "only")
+  expect_false(comparison_id %in% result$selections$healthy$rankings$Model_ID)
+})
+
 test_that("update forecast assembly leaves reconciliation until after quality assessment", {
   fixture <- make_reconciled_selection_fixture()
   predictions <- fixture$forecasts[fixture$forecasts$Model_ID == "safe", ]

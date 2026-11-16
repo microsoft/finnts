@@ -1,4 +1,4 @@
-# finnts 0.7.0.9021 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9022 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -6,6 +6,7 @@
   - Approval is manual in interactive sessions or automatic.
 - Custom models train on a new `C1` recipe selected through `recipes_to_run`, alone or beside built-in models.
   - Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.
+  - Agent iterations and updates always run compatible custom models and show them beside the best model.
 - Added `chat_copilot()` as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows and `create_custom_model()`.
   - Defaults to automatic model selection, with isolated conversations and tool-disabled requests.
   - Custom-model authoring checks Copilot's JSON responses locally against the requested types and needs S7.
