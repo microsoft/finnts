@@ -436,7 +436,7 @@ ensemble_models <- function(run_info,
           base::suppressMessages() %>%
           base::suppressWarnings()
 
-        best_param <- tune::select_best(tune_results, metric = "rmse")
+        best_param <- select_best_rmse(tune_results, model)
 
         if (length(colnames(best_param)) == 1) {
           hyperparameter_id <- 1
@@ -469,7 +469,7 @@ ensemble_models <- function(run_info,
           base::suppressMessages() %>%
           base::suppressWarnings()
 
-        final_fcst <- tune::collect_predictions(refit_tbl) %>%
+        final_fcst <- collect_resample_predictions(refit_tbl, model) %>%
           dplyr::rename(
             Forecast = .pred,
             Train_Test_ID = id

@@ -38,6 +38,7 @@
 
 ## Bug Fixes
 
+- Models failing on every validation or back-test split now report the underlying error, not a missing `.pred` column.
 - Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
   - A combo column with both missing values and literal `"NA"` text now errors instead of merging them.

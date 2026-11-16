@@ -720,7 +720,7 @@ train_models <- function(run_info,
           base::suppressMessages() %>%
           base::suppressWarnings()
 
-        best_param <- tune::select_best(tune_results, metric = "rmse")
+        best_param <- select_best_rmse(tune_results, model)
 
         if (length(colnames(best_param)) == 1) {
           hyperparameter_id <- 1
@@ -759,7 +759,7 @@ train_models <- function(run_info,
             parallel_over = "everything"
           )
         ) %>%
-          tune::collect_predictions() %>%
+          collect_resample_predictions(model) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
 
@@ -1079,6 +1079,66 @@ negative_fcst_adj <- function(data,
   }
 
   return(fcst_final)
+}
+
+#' Explain why every resample of a tune result failed
+#'
+#' tune records a model error on a resample as a note. When every resample
+#' failed it reports only "All models failed" (tuning) or returns no `.pred`
+#' column (`fit_resamples()`), so the cause, such as a missing foundation-model
+#' API credential, was lost in Spark tasks and Agent logs.
+#'
+#' @param results A `tune_results` object from `tune::tune_grid()` or
+#'   `tune::fit_resamples()`.
+#' @param model Model name for the message.
+#' @param splits Kind of split that failed: "validation" or "back-test".
+#'
+#' @return One string naming the model, the split kind and tune's first error
+#'   note, or saying tune recorded none.
+#' @noRd
+resample_failure_message <- function(results, model, splits) {
+  notes <- tryCatch(tune::collect_notes(results), error = function(e) NULL)
+  if (is.data.frame(notes) && "type" %in% names(notes)) notes <- notes[notes$type == "error", , drop = FALSE]
+  reason <- if (is.data.frame(notes) && nrow(notes) > 0L && "note" %in% names(notes)) {
+    notes$note[[1]]
+  } else {
+    "tune recorded no error"
+  }
+  paste0("Model '", model, "' failed on every ", splits, " split: ", reason)
+}
+
+#' Back-test predictions of a `fit_resamples()` result
+#'
+#' @param resamples A `tune::fit_resamples()` result run with `save_pred = TRUE`.
+#' @param model Model name for the error.
+#'
+#' @return `tune::collect_predictions()` output, unchanged when any resample
+#'   predicted. When none did, errors with `resample_failure_message()` instead
+#'   of leaving callers to fail on a missing `.pred` column.
+#' @noRd
+collect_resample_predictions <- function(resamples, model) {
+  predictions <- tune::collect_predictions(resamples)
+  if (!".pred" %in% names(predictions)) {
+    stop(resample_failure_message(resamples, model, "back-test"), call. = FALSE)
+  }
+  predictions
+}
+
+#' Best RMSE hyperparameters of a tuning result
+#'
+#' @param tune_results A `tune::tune_grid()` result.
+#' @param model Model name for the error.
+#'
+#' @return `tune::select_best(tune_results, metric = "rmse")`. When every
+#'   candidate failed on every validation split, errors with
+#'   `resample_failure_message()` instead of tune's "All models failed".
+#' @noRd
+select_best_rmse <- function(tune_results, model) {
+  failed <- vapply(tune_results$.metrics, function(metrics) is.null(metrics) || nrow(metrics) == 0L, logical(1))
+  if (length(failed) > 0L && all(failed)) {
+    stop(resample_failure_message(tune_results, model, "validation"), call. = FALSE)
+  }
+  tune::select_best(tune_results, metric = "rmse")
 }
 
 #' Function to get train test splits in rsample format

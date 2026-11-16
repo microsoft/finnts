@@ -3211,6 +3211,8 @@ update_model_execution <- function(expression, model, recoverable) {
 #' `custom_fixed_results` reuses the first custom fit during mixed built-in retuning.
 #' Recoverable built-in execution errors retain a typed cause for default recovery;
 #' custom source, provider, configuration and artifact errors remain hard.
+#' A built-in model that fails on every back-test split raises tune's first error
+#' note, untyped as before, instead of a missing `.pred` column error.
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
@@ -3563,7 +3565,7 @@ fit_models <- function(run_info,
         base::suppressMessages() %>%
         base::suppressWarnings()
 
-      best_param <- update_model_execution(tune::select_best(tune_results, metric = "rmse"),
+      best_param <- update_model_execution(select_best_rmse(tune_results, model),
         model, recoverable)
 
       if (length(colnames(best_param)) == 1) {
@@ -3609,9 +3611,12 @@ fit_models <- function(run_info,
         pkgs = c(inner_packages, "finnts"),
         parallel_over = "everything"
       )
-    ) %>% tune::collect_predictions(), model, recoverable) %>%
+    ), model, recoverable) %>%
       base::suppressMessages() %>%
-      base::suppressWarnings()
+      base::suppressWarnings() %>%
+      # outside update_model_execution(), so a model that failed every split
+      # keeps its untyped error flow; only the message names the cause
+      collect_resample_predictions(model)
 
     if (is_custom) custom_run_check_predictions(refit_tbl, prep_data, create_splits(prep_data, model_train_test_tbl))
 
