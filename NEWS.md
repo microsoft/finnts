@@ -1,4 +1,4 @@
-# finnts 0.7.0.9022 (DEVELOPMENT VERSION)
+# finnts 0.7.0.9023 (DEVELOPMENT VERSION)
 
 ## Improvements
 
@@ -25,9 +25,21 @@
   - Also checks that `date_type` matches the date spacing.
   - For hierarchies, also checks every series and external regressor can be prepared, with `prep_data()` errors.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
+- `inner_parallel = TRUE` again tunes and refits models in parallel with tune 2.x, reusing the existing worker pool.
+  - Local worker pools stop and the caller's `future` plan is restored when each step finishes, fails or is cancelled.
+  - When series run one after another, worker processes now start once and are reused instead of restarting per series.
+  - Pools are sized to the available work and respect `num_cores` and container CPU limits.
+  - On Spark, each series starts one pool, shared by its feature selection, training and Agent iterations.
+  - On Spark, each series' inner workers share its executor node's cores; see the parallel processing vignette.
+- Simple model averages are computed up to 50 times faster, with identical results.
+- `prep_data()` on Spark no longer preps partial series to infer its output columns, skipping one Spark job.
+- Drops the `plyr` and `gtools` dependencies; average model IDs and combined CSV reads are unchanged.
+- Automatic MARS tuning skips exhaustive pruning, which can exceed 15 minutes per fit; MARS grids and forecasts change once.
+  - Saved runs keep their chosen pruning when `update_forecast()` refits without retuning.
 
 ## Bug Fixes
 
+- Models failing on every validation or back-test split now report the underlying error, not a missing `.pred` column.
 - Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.
   - A combo column with both missing values and literal `"NA"` text now errors instead of merging them.
@@ -125,6 +137,37 @@
   -   Earlier versions remain replay context; external-regressor exploration has no separate cap beyond the overall iteration limit.
   -   Canonical lag, rolling-window, and seasonal-period settings prevent reordered, default, or previously tested configurations consuming additional changes.
   -   Finalization and verification avoid repeated listings; best-run listing failures propagate as storage errors.
+-   Multistep models no longer silently lose back-test refits on inner-parallel workers that had not loaded finnts.
+-   Fixed a bug in leave-one-feature-out (LOFO) feature selection; it now works for monthly, quarterly and yearly local models.
+  -   Selected features, forecasts and runtimes change for these feature-selection runs; existing saved runs are unchanged.
+  -   LOFO is the slowest selection step; `inner_parallel = TRUE` runs it in parallel.
+  -   LOFO now respects `num_cores` and shares the inner worker pool.
+-   Simple model averages are no longer silently dropped when an inner-parallel worker fails, which could change the selected model.
+  -   Failed averages are recomputed in the main process with a warning.
+-   Replaced deprecated `dials::grid_latin_hypercube()` and timetk rolling-window calls that relied on deprecated `purrr::cross_df()`.
+  -   Prepared features and ensemble grids are unchanged, except with `num_hyperparameters = 1`, where ensembles pick their setting like individual models.
+    -   Results remain reproducible for a given seed.
+-   Fixed `prep_data()` on Spark failing at its final step when `stationary` or `box_cox` is on.
+  -   The default `stationary = TRUE` was affected; Agent workflows were not.
+-   Spark step reconnects now reuse the original connection method, such as `"synapse"` or `"databricks"`, and app name.
+-   C1 source fingerprints from Spark-table input now match local input, so prep no longer reports false source changes.
+  -   Standard C1 runs first prepped from a Spark table before this fix need a new run.
+-   `get_forecast_data()` and `final_models()` no longer fail on Parquet runs with model averages; saved files are unchanged.
+-   Parquet outputs no longer fail on Windows when `final_models()` rewrites forecasts it just read.
+-   On Synapse and Databricks mounts, outputs Spark tasks just wrote are re-read briefly when missing or out of date.
+  -   Avoids intermittent "missing a best model" and "No trained models found" Agent retries.
+  -   Model summaries wait for each series' chosen model instead of failing on an old forecast copy.
+-   Multistep glmnet, xgboost, cubist, mars and svm models now train when finnts is loaded but not attached.
+  -   Previously they were silently dropped, for example in `finnts::` calls or background jobs.
+-   Inner parallel pools now start on a free port, so concurrent Spark tasks no longer fail on port clashes.
+
+## Breaking Changes
+
+-   Requires R 4.1 and tune 2.0.1 or later; minimum dials, parsnip, recipes, rsample and workflows versions also rise.
+  -   Adds `future`, `future.apply` and `parallelly` imports; all were already installed through existing dependencies.
+  -   Forecasts may shift once when upgrading from tune 1.x, because tune 2.x seeds resampling differently.
+  -   Upgrade Spark cluster libraries to these versions before installing this finnts version.
+-   Custom models may declare `future`, `future.apply` and `parallelly`, but no longer `plyr` or `gtools`; re-register any that did.
 
 # finnts 0.7.0
 

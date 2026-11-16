@@ -170,8 +170,11 @@ resolve_agent_global_forecast_approaches <- function(agent_info, eda_results) {
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't be
-#'   greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return NULL
@@ -432,11 +435,16 @@ iterate_forecast <- function(agent_info,
       num_cores           = num_cores,
       task_length         = length(local_combo_list)
     )
+    par_end_on_exit(par_info$cl)
 
     cl <- par_info$cl
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
     agent_info_lean <- agent_custom_worker_info(agent_info, keep_llm = TRUE)
+    # series optimized one after another in this process share one inner pool
+    local_inner_pool(inner_parallel && is.null(parallel_processing))
+    # each Spark task's share of its node for automatic inner pools (D13)
+    task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
     # foreach over each combo file
     local_models <- foreach::foreach(
@@ -465,6 +473,7 @@ iterate_forecast <- function(agent_info,
           agent_info_lean <- agent_info_lean
           safe_dir_ls <- safe_dir_ls
           list_files <- list_files
+          task_cores <- task_cores
         }
 
         # adjust max iterations based on previous runs
@@ -488,8 +497,9 @@ iterate_forecast <- function(agent_info,
             cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
           }
 
-          # run the local model workflow
-          fcst_results <- capture_forecast_warnings(fcst_agent_workflow(
+          # run the local model workflow; its iterations and stages share one
+          # inner pool in this worker process
+          fcst_results <- capture_forecast_warnings(with_inner_pool(fcst_agent_workflow(
             agent_info = agent_info_lean,
             combo = hash_data(x),
             weighted_mape_goal = weighted_mape_goal,
@@ -500,7 +510,7 @@ iterate_forecast <- function(agent_info,
             seed = seed,
             previous_run_results = previous_runs,
             fallback_available = FALSE
-          ))
+          ), active = inner_parallel, cores = task_cores))
           fallback_warnings <- fcst_results$warnings
         } else {
           cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
@@ -770,6 +780,10 @@ load_final_agent_artifact <- function(agent_info,
 #' load the best forecast for an agent before saving to disk
 #'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and prepares it before it writes to disk.
+#' On mounted Spark storage the read is repeated with [read_settled()] while it
+#' fails, because the final Spark stages' forecasts can be briefly invisible or
+#' stale there; its errors are unchanged. Best runs are loaded once before the
+#' first read, so repeated reads never list the logs folder again.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param final_output If TRUE, formats the output for final saving. If FALSE, returns raw forecast data.
@@ -781,8 +795,31 @@ load_agent_forecast <- function(agent_info,
   # formatting checks
   check_agent_info(agent_info = agent_info)
 
+  reconciled <- agent_info$forecast_approach != "bottoms_up" & final_output
+  best_run_tbl <- if (!reconciled) load_best_agent_run(agent_info)
+  read_settled(function() load_agent_forecast_once(agent_info, reconciled, best_run_tbl),
+    function(forecasts) TRUE, agent_info$project_info$path, "final Agent forecasts")
+}
+
+#' Read and assemble the best Agent forecast once
+#'
+#' Body of [load_agent_forecast()]: reads the reconciled forecast, or each best
+#' run's global and local forecasts, and errors when a series or its best model
+#' is missing.
+#'
+#' @param agent_info Agent info from `set_agent_info()`
+#' @param reconciled If TRUE, returns the saved reconciled forecast of a
+#'   hierarchical Agent run instead of assembling the best runs.
+#' @param best_run_tbl Best runs from [load_best_agent_run()]; unused when
+#'   `reconciled` is TRUE.
+#'
+#' @return A tibble containing the final forecast for the agent.
+#' @noRd
+load_agent_forecast_once <- function(agent_info,
+                                     reconciled,
+                                     best_run_tbl) {
   # check for reconciled forecast and return if found
-  if (agent_info$forecast_approach != "bottoms_up" & final_output) {
+  if (reconciled) {
     project_info <- agent_info$project_info
     project_info$run_name <- agent_info$run_id
 
@@ -799,9 +836,6 @@ load_agent_forecast <- function(agent_info,
 
     return(fcst_tbl)
   }
-
-  # get the best run for the agent
-  best_run_tbl <- load_best_agent_run(agent_info)
 
   model_type_list <- best_run_tbl %>%
     dplyr::pull(model_type) %>%
@@ -2873,11 +2907,17 @@ log_best_run <- function(agent_info,
       combo <- "all"
     }
 
-    # get back test data
-    back_test_tbl <- load_combo_forecast(
-      combo = ifelse(combo == "all", "All-Data", combo),
-      run_info = run_info
-    )
+    # get back test data; get_forecast_data() settles the all-series read after
+    # listing its files once, so only the per-series read is settled here
+    read_back_tests <- function() {
+      load_combo_forecast(
+        combo = ifelse(combo == "all", "All-Data", combo),
+        run_info = run_info
+      )
+    }
+    back_test_tbl <- if (combo == "all") {
+      read_back_tests()
+    } else read_settled(read_back_tests, best_models_complete, run_info$path, "selected forecasts")
 
     # validate that every combo has a best model
     validate_best_model(back_test_tbl, context = "log_best_run")

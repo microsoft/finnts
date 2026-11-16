@@ -994,6 +994,48 @@ test_that("chronos_forecast works with multiple combos", {
   expect_equal(nrow(result), 6) # 3 periods × 2 combos
 })
 
+# Back-test failures name their cause (no API call: credentials are blanked)
+
+test_that("training reports why a model failed on every validation split", {
+  withr::local_envvar(CHRONOS_API_URL = "", CHRONOS_API_TOKEN = "")
+  info <- standard_run(withr::local_tempdir())
+  prep_models(info, models_to_run = "chronos2", run_ensemble_models = FALSE,
+    back_test_scenarios = 1, num_hyperparameters = 1)
+
+  expect_error(
+    train_models(info, run_local_models = TRUE, run_global_models = FALSE, debug = TRUE),
+    "Model 'chronos2' failed on every validation split: Environment variable 'CHRONOS_API_URL' is not set",
+    fixed = TRUE
+  )
+})
+
+test_that("update refits report why a model failed on every back-test split", {
+  withr::local_envvar(CHRONOS_API_URL = "", CHRONOS_API_TOKEN = "")
+  info <- standard_run(withr::local_tempdir())
+  prep_models(info, models_to_run = "meanf", run_ensemble_models = FALSE,
+    back_test_scenarios = 1, num_hyperparameters = 1)
+  prepared <- get_prepped_models(info)
+  splits <- prepared %>% dplyr::filter(Type == "Train_Test_Splits") %>%
+    dplyr::select(Data) %>% tidyr::unnest(Data)
+  parameters <- prepared %>% dplyr::filter(Type == "Model_Hyperparameters") %>%
+    dplyr::select(Data) %>% tidyr::unnest(Data)
+  r1 <- read_exact_artifact(info, local_artifact_path(info, "prep_data", "-R1", hash_data("A")),
+    return_type = "df") %>% adjust_combo_column()
+  # a saved chronos2 fit only stores its data, so the refit succeeds and every split's prediction fails
+  saved <- generics::fit(chronos2(r1, horizon = 2, frequency = 12), tidyr::drop_na(r1, Target))
+  trained <- tibble::tibble(Model_ID = "chronos2--local--R1", Model_Name = "chronos2",
+    Model_Type = "local", Recipe_ID = "R1", Model_Fit = list(saved))
+
+  error <- expect_error(
+    fit_models(info, "A", tibble::tibble(), trained, splits, parameters,
+      read_selection_file(info, "logs"), 2, FALSE, 1, FALSE),
+    "Model 'chronos2' failed on every back-test split: Environment variable 'CHRONOS_API_URL' is not set",
+    fixed = TRUE
+  )
+  # same failure flow as before: not reclassified as a recoverable update error
+  expect_false(inherits(error, "finnts_update_model_error"))
+})
+
 # Chronos Bolt Base Model Unit Tests (no API call needed)
 
 test_that("Chronos Bolt Base model can be initialized", {

@@ -20,3 +20,4 @@ cran-comments.md
 ^CLAUDE\.md$
 ^skills$
 ^\.vscode$
+^\.git$

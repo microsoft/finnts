@@ -7,15 +7,18 @@ finnts offers two ways to use several cores, and rejects using both at once:
   so memory use grows with the number of workers.
 - `inner_parallel = TRUE`: tuning and backtesting work within one series runs in
   parallel. Model types are not necessarily trained simultaneously. Best with few
-  series or when global models (one model across all series) run.
+  series or when global models (one model across all series) run. Worker processes
+  start once per run and are reused from series to series.
 
 `config.json` has `"parallel": "auto"` (default) or `"none"` (always sequential).
 With `auto`, `run_forecast.R` picks the setup from the machine and the data
 (`finn_choose_parallel()` in `scripts/finn_common.R`):
 
-1. Detect the machine's logical processors and total RAM before assigning workers.
+1. Detect the CPU cores Finn may use and total RAM before assigning workers.
+   Cores come from the parallelly package when installed (finnts installs it), which
+   honors container and job-scheduler limits; otherwise every logical processor counts.
    `per_worker_gb = 0.3`;
-   `safe_workers = min(max(1, logical processors - 1), floor(total RAM GB x 0.8 / 0.3))`.
+   `safe_workers = min(max(1, cores - 1), floor(total RAM GB x 0.8 / 0.3))`.
    The input size does not change this flat estimate. Unknown CPU count or total
    RAM is reported and falls back to sequential processing, rather than guessing.
 2. **Sequential** if fewer than 2 budgeted workers, or after three memory failures.
@@ -27,12 +30,15 @@ With `auto`, `run_forecast.R` picks the setup from the machine and the data
 Global models run by default for monthly, quarterly, and yearly data, not weekly or daily.
 
 The 80 percent allowance is a **planning budget**, not a RAM reservation or enforced
-limit. Actual workers may exceed 300 MB, particularly with large data or model tuning.
+limit. A worker already uses about 400 MB once finnts is loaded, and more while
+training with large data or model tuning, so actual use can exceed the 300 MB estimate.
+On typical machines CPU sets the worker count anyway; the estimate only lowers it
+where RAM per core is small.
 Low currently available RAM triggers a warning, not a lower allocation. The operating
 system can reclaim memory or page, but this may slow Finn and other applications.
 Missing available-RAM information also produces a warning.
 
-For example, 22 logical processors and 31.65 GB total RAM allow up to 21 workers:
+For example, 22 detected cores and 31.65 GB total RAM allow up to 21 workers:
 the RAM budget is 25.32 GB, enough for 84 estimated workers, so CPU is the limit.
 Outer parallelism is also capped at useful series/tasks where known; inner work
 may not keep every allocated worker busy.

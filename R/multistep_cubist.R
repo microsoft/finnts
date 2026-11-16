@@ -2,6 +2,10 @@
 
 #' Initialize custom cubist parsnip model
 #'
+#' Declares finnts as an engine dependency so tune loads it, and with it this
+#' engine registration, on every parallel worker before fitting. The fit
+#' function is registered with its package, so parsnip finds it where finnts is
+#' loaded but not attached (Spark workers, background jobs, finnts:: callers).
 #'
 #' @return NA
 #' @noRd
@@ -14,6 +18,7 @@ make_cubist_multistep <- function() {
   parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "parsnip")
   parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "Cubist")
   parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "rules")
+  parsnip::set_dependency("cubist_multistep", "cubist_multistep_horizon", "finnts")
 
   # * Args - CUBIST ----
   parsnip::set_model_arg(
@@ -94,7 +99,7 @@ make_cubist_multistep <- function() {
     value = list(
       interface = "data.frame",
       protect   = c("x", "y"),
-      func      = c(fun = "cubist_multistep_fit_impl"),
+      func      = c(pkg = "finnts", fun = "cubist_multistep_fit_impl"),
       defaults  = list()
     )
   )

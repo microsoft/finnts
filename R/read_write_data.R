@@ -28,7 +28,7 @@
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_forecast_data_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -136,32 +136,54 @@ get_forecast_data <- function(run_info,
     )
   }
 
-  forecast_tbl <- if (local_hierarchy) {
-    reconciled_files <- local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
-    read_local_artifacts(run_info, unique(c(
+  # Files are listed once before reading: a finished Spark stage's forecasts can
+  # be stale on a mount, and read_settled() then repeats only the read below.
+  # Spark tables ("sdf") are read by Spark from storage, not through the mount,
+  # so they keep the single wildcard-path read.
+  settle <- identical(return_type, "df")
+  read_forecasts <- if (local_hierarchy) {
+    reconciled_files <- unique(c(
       local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
-      reconciled_files
-    )))
+      local_artifact_inventory(run_info, "forecasts", "-*-reconciled")
+    ))
+    function() read_local_artifacts(run_info, reconciled_files)
   } else if (provider_hierarchy) {
     reconciled_files <- list_files(run_info$storage_object,
       local_artifact_path(run_info, "forecasts", "-*-reconciled"), fail_on_error = TRUE)
     if (inherits(run_info$storage_object, "ms_drive")) {
       reconciled_files <- fs::path(run_info$path, "forecasts", fs::path_file(reconciled_files))
     }
-    read_exact_artifact(run_info, unique(c(
+    reconciled_files <- unique(c(
       local_artifact_path(run_info, "forecasts", "-reconciled", hash_data("Best-Model")),
       reconciled_files
-    )))
+    ))
+    function() read_exact_artifact(run_info, reconciled_files)
   } else if (local_reads && condensed && identical(forecast_approach, "bottoms_up")) {
-    read_local_artifacts(run_info, condensed_files)
+    function() read_local_artifacts(run_info, condensed_files)
   } else if (single_combo) {
-    read_file(run_info,
-      file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
-    )
-  } else read_file(run_info,
-    path = fcst_path,
-    return_type = return_type
-  )
+    function() {
+      read_file(run_info,
+        file_list = local_model_artifact_files(run_info, "forecasts"), strict = TRUE
+      )
+    }
+  } else {
+    # the same listing read_file() would run; provider runs still download per read
+    forecast_files <- if (settle && is.null(run_info$storage_object) && !is.null(run_info$path)) {
+      list_files(NULL, fs::path(run_info$path, fcst_path))
+    }
+    function() {
+      read_file(run_info,
+        path = fcst_path,
+        file_list = forecast_files,
+        return_type = return_type
+      )
+    }
+  }
+  forecast_tbl <- if (settle) {
+    read_settled(read_forecasts, best_models_complete, run_info$path, "final forecasts")
+  } else {
+    read_forecasts()
+  }
   forecast_tbl <- forecast_tbl %>%
     dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID)) %>%
     dplyr::left_join(model_train_test_tbl,
@@ -201,7 +223,7 @@ get_forecast_data <- function(run_info,
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_trained_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -274,7 +296,7 @@ get_trained_models <- function(run_info) {
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_prepped_data_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -357,7 +379,7 @@ get_prepped_data <- function(run_info,
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "get_prepped_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -768,9 +790,7 @@ read_file <- function(run_info,
   if (return_type == "df") {
     switch(file_ext,
       rds = files %>% purrr::map_dfr(readRDS),
-      parquet = files %>% purrr::map_dfr(function(path) {
-        arrow::read_parquet(path)
-      }),
+      parquet = files %>% purrr::map_dfr(read_parquet_artifact),
       csv = tryCatch(
         {
           col_types <- if (length(character_columns) > 0L) {
@@ -832,7 +852,7 @@ read_file <- function(run_info,
               )
             }) %>%
             purrr::compact() %>% # Remove NULL/empty results
-            plyr::rbind.fill() %>%
+            bind_rows_fill() %>%
             tibble::tibble()
         }
       ),
@@ -870,6 +890,101 @@ read_file <- function(run_info,
   } else if (return_type == "object") {
     readRDS(files)
   }
+}
+
+#' Read one Parquet artifact into memory
+#'
+#' Reads without memory-mapping: a mapped file stays open until R garbage
+#' collects the result, and Windows refuses to overwrite an open mapped file,
+#' which `final_models()` does when it rewrites the forecasts it just read.
+#' Simple-average forecasts save `Hyperparameter_ID` as the text `"NA"`, while
+#' model forecasts save numbers; Parquet keeps the text type, so such text is
+#' converted to numbers with `"NA"` as missing, matching what CSV reads return
+#' and letting model and average forecasts combine. Saved files are unchanged.
+#'
+#' @param path Local path of a Parquet file.
+#'
+#' @return A tibble.
+#' @noRd
+read_parquet_artifact <- function(path) {
+  data <- arrow::read_parquet(path, mmap = FALSE)
+  if ("Hyperparameter_ID" %in% names(data) && is.character(data$Hyperparameter_ID)) {
+    ids <- data$Hyperparameter_ID
+    ids[ids %in% "NA"] <- NA_character_
+    data$Hyperparameter_ID <- as.numeric(ids)
+  }
+  data
+}
+
+#' Waits before re-reading a Spark stage's output on mounted storage
+#'
+#' Synapse mounts ADLS through blobfuse with a 120-second file cache by
+#' default. After Spark executors create or overwrite a file, a node that looked
+#' up or read that path earlier can keep seeing it as missing or stale: 37-98
+#' seconds in the Phase 0 probe, over 180 seconds in runbook check A3. The waits
+#' back off so repeated lookups stay sparse, and total 195 seconds, longer than
+#' the cache. Databricks `/dbfs` is also a FUSE mount. Other paths, including
+#' local folders and storage objects read through their APIs, never wait.
+#'
+#' @param path Run or project `path`.
+#'
+#' @return Seconds to wait before each re-read; empty when re-reads are off.
+#' @noRd
+settle_waits <- function(path) {
+  if (is.character(path) && length(path) == 1L && grepl("^/(synfs|dbfs)/", path)) {
+    c(5, 10, 20, 40, 60, 60)
+  } else {
+    numeric()
+  }
+}
+
+# Per-process state of read_settled(): `active` is TRUE while a settled read
+# runs, so reads nested inside it run once.
+read_settled_state <- new.env(parent = emptyenv())
+
+#' Read a finished Spark stage's output until it is complete
+#'
+#' Calls `read()` and returns the value once `ready(value)` is `TRUE`. On
+#' mounted Spark storage (see [settle_waits()]), an incomplete value or a read
+#' error is read again after each wait, with one message, so a stale mount cache
+#' costs a short wait instead of a failed step or an Agent retry. Use it only for
+#' files a finished Spark stage wrote, never to probe a path workers may write
+#' later. Callers keep their own validation after this call: a value that is
+#' still incomplete is returned unchanged so the caller raises its usual error,
+#' and a read that still fails re-signals its last error. List unknown file
+#' names before calling it so `read()` repeats only reads, never listings.
+#' Elsewhere `read()` runs once with its errors unchanged. A `read_settled()`
+#' call inside another one's `read()` also runs once, so nested reads never
+#' multiply the waits.
+#'
+#' @param read Function with no arguments that reads and returns the value.
+#' @param ready Function of the value returning `TRUE` when it is complete;
+#'   an error counts as incomplete.
+#' @param path Run or project `path`; decides whether re-reads happen.
+#' @param what Short description of the artifact for the message.
+#'
+#' @return The first complete value, otherwise the last value read.
+#' @noRd
+read_settled <- function(read, ready, path, what) {
+  waits <- settle_waits(path)
+  if (!length(waits) || isTRUE(read_settled_state$active)) return(read())
+  read_settled_state$active <- TRUE
+  on.exit(read_settled_state$active <- FALSE, add = TRUE)
+  attempt <- function() tryCatch(read(), error = identity)
+  complete <- function(value) {
+    !inherits(value, "error") && isTRUE(tryCatch(ready(value), error = function(e) FALSE))
+  }
+  value <- attempt()
+  for (index in seq_along(waits)) {
+    if (complete(value)) break
+    if (index == 1L) {
+      message("Re-reading ", what, ": files just written by Spark tasks are not visible yet on the mounted storage.")
+    }
+    Sys.sleep(waits[[index]])
+    value <- attempt()
+  }
+  if (inherits(value, "error")) stop(value)
+  value
 }
 
 download_exact_artifact <- function(storage_object, path, destination, allow_missing) {
@@ -1227,6 +1342,7 @@ condense_data <- function(run_info,
     num_cores = min(length(names(list_of_batches)), num_cores),
     task_length = length(names(list_of_batches))
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages

@@ -116,6 +116,43 @@ test_that("NULL seasonal periods remain missing in the run log", {
   expect_true(is.na(run_log$seasonal_period))
 })
 
+test_that("saved MARS hyperparameter grids never select exhaustive pruning", {
+  run_path <- withr::local_tempdir()
+  run_info <- set_run_info(
+    project_name = "mars_pruning_grid",
+    run_name = "test",
+    path = run_path,
+    add_unique_id = FALSE
+  )
+
+  prep_data(
+    run_info = run_info,
+    input_data = seasonal_period_test_data(),
+    combo_variables = "id",
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 2,
+    recipes_to_run = "R1"
+  )
+  prep_models(
+    run_info = run_info,
+    back_test_scenarios = 2,
+    models_to_run = "mars",
+    run_ensemble_models = FALSE,
+    num_hyperparameters = 10,
+    seed = 123
+  )
+
+  prepared_models <- get_prepped_models(run_info)
+  grid <- prepared_models$Data[[which(prepared_models$Type == "Model_Hyperparameters")]] %>%
+    dplyr::filter(Model == "mars") %>%
+    tidyr::unnest(Hyperparameters)
+
+  expect_equal(nrow(grid), 10)
+  expect_false("exhaustive" %in% grid$prune_method)
+  expect_true(all(grid$prune_method %in% c("backward", "none", "forward", "seqrep")))
+})
+
 test_that("invalid custom seasonal periods fail before model training", {
   expect_equal(validate_seasonal_period(c(4L, 2L)), c(4, 2))
   expect_equal(validate_seasonal_period(list(4, 2L)), c(4, 2))

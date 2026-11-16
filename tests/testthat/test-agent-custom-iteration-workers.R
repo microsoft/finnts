@@ -1,6 +1,7 @@
 test_that("installed custom Agent forecasts dispatch to two independent real workers", {
   namespace <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(file.exists(file.path(namespace, "Meta", "package.rds")), "Real Agent worker dispatch is verified from the installed namespace")
+  skip_if_fewer_workers(2)
   withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
   args <- custom_agent_inputs(withr::local_tempdir(), series = 2L)
   observations <- withr::local_tempdir()

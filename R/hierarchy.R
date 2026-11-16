@@ -836,38 +836,47 @@ reconcile_hierarchical_data <- function(run_info,
     )
   }
 
-  # Path-based Spark runs discover forecast files once and share the list with
-  # every task. Provider-backed runs download per task because driver temp files
-  # are not visible to Spark workers.
-  forecast_files <- if (spark_run && is.null(run_info$storage_object) && !is.null(run_info$path)) {
+  # Path-based runs discover forecast files once: Spark tasks share the list and
+  # mounted re-reads (see read_settled()) reuse it. Provider-backed runs download
+  # per task because driver temp files are not visible to Spark workers.
+  forecast_files <- if (is.null(run_info$storage_object) && !is.null(run_info$path)) {
     if (condensed) condensed_files else list_files(NULL, fs::path(run_info$path, fcst_path))
   }
 
-  unreconciled_tbl <- if (spark_run) {
-    read_file(run_info,
-      path = fcst_path, file_list = forecast_files, return_type = "arrow",
-      schema = hierarchy_forecast_schema()
+  # a finished Spark stage's forecasts can be stale on a mount; only the read repeats
+  forecasts <- read_settled(function() {
+    unreconciled_tbl <- if (spark_run) {
+      read_file(run_info,
+        path = fcst_path, file_list = forecast_files, return_type = "arrow",
+        schema = hierarchy_forecast_schema()
+      )
+    } else if (condensed && is.null(run_info$storage_object) &&
+      run_info$data_output %in% c("csv", "parquet", "rds")) {
+      read_local_artifacts(run_info, condensed_files)
+    } else read_file(run_info,
+      path = fcst_path,
+      file_list = forecast_files,
+      return_type = "df"
     )
-  } else if (condensed && is.null(run_info$storage_object) &&
-    run_info$data_output %in% c("csv", "parquet", "rds")) {
-    read_local_artifacts(run_info, condensed_files)
-  } else read_file(run_info,
-    path = fcst_path,
-    return_type = "df"
-  )
-  unreconciled_tbl <- unreconciled_tbl %>%
-    dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
+    unreconciled_tbl <- unreconciled_tbl %>%
+      dplyr::mutate(Train_Test_ID = as.numeric(Train_Test_ID))
 
-  # One small model/node index serves the enrollment guard, the model list and
-  # the best-model check, so lazy forecasts are not rescanned for each.
-  forecast_index <- if (is.null(custom_run)) {
-    unreconciled_tbl %>%
-      dplyr::select(dplyr::any_of(c("Model_ID", "Model_Name", "Combo", "Best_Model"))) %>%
-      dplyr::distinct() %>%
-      dplyr::collect()
-  } else {
-    custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
-  }
+    # One small model/node index serves the enrollment guard, the model list and
+    # the best-model check, so lazy forecasts are not rescanned for each.
+    forecast_index <- if (is.null(custom_run)) {
+      unreconciled_tbl %>%
+        dplyr::select(dplyr::any_of(c("Model_ID", "Model_Name", "Combo", "Best_Model"))) %>%
+        dplyr::distinct() %>%
+        dplyr::collect()
+    } else {
+      custom_reconciliation_coverage(unreconciled_tbl, hts_list, model_train_test_tbl, custom_run)
+    }
+    list(unreconciled_tbl = unreconciled_tbl, forecast_index = forecast_index)
+  }, function(forecasts) best_models_complete(forecasts$forecast_index), run_info$path, "forecasts to reconcile")
+  unreconciled_tbl <- forecasts$unreconciled_tbl
+  forecast_index <- forecasts$forecast_index
+  # doSpark serializes this frame for its tasks; keep one copy of the forecasts
+  rm(forecasts)
   if (is.null(custom_run) && any(grepl("^custom-[a-f0-9]{64}--", forecast_index$Model_ID))) {
     stop("Custom hierarchy requires validated enrollment before reconciliation.", call. = FALSE)
   }
@@ -895,6 +904,7 @@ reconcile_hierarchical_data <- function(run_info,
       num_cores = num_cores,
       task_length = length(model_list)
     )
+    par_end_on_exit(par_info$cl)
 
     cl <- par_info$cl
     packages <- par_info$packages
@@ -1097,6 +1107,7 @@ reconcile_hierarchical_data <- function(run_info,
       num_cores = num_cores,
       task_length = length(model_list)
     )
+    par_end_on_exit(par_info$cl)
 
     cl <- par_info$cl
     packages <- par_info$packages
@@ -1430,7 +1441,7 @@ external_regressor_mapping <- function(data,
       next_grains <- list()
       for (grain in grains) {
         remaining <- multi_value_vars[seq_along(multi_value_vars) >
-          match(tail(grain, 1), multi_value_vars)]
+          match(utils::tail(grain, 1), multi_value_vars)]
         for (variable in remaining) {
           next_grains[[length(next_grains) + 1L]] <- c(grain, variable)
           if (length(next_grains) > 1024L - candidates_checked) {
@@ -1465,7 +1476,7 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
   bottom_names <- colnames(bottom_level_tbl)[-1]
   source_columns <- strsplit(source_level, "---", fixed = TRUE)[[1]]
   source_keys <- dplyr::distinct(input_data[, source_columns, drop = FALSE])
-  source_id <- tail(make.unique(c(names(input_data), ".source_id")), 1)
+  source_id <- utils::tail(make.unique(c(names(input_data), ".source_id")), 1)
   source_keys[[source_id]] <- seq_len(nrow(source_keys))
   source_data <- dplyr::left_join(
     input_data[, unique(c("Combo", "Date", regressor, source_columns)), drop = FALSE],

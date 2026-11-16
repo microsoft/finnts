@@ -48,15 +48,15 @@ test_that("Spark preparation executes C1 with independent columns and backend-ne
   local_mocked_bindings(check_parallel_processing = function(...) invisible(NULL),
     adjust_df = function(df, ...) df, .package = "finnts")
   contexts <- list()
-  # Execute the production callback on each genuine panel. Restore its global
-  # context bindings at test exit; no Spark cluster or storage emulation is used.
-  local_mocked_bindings(spark_apply = function(x, f, group_by, context, ...) {
+  # Execute the production callback on each genuine panel, prepending the group
+  # key and applying typed columns like the real grouped worker. Restore its
+  # global context bindings at test exit; no Spark cluster or storage is used.
+  local_mocked_bindings(spark_apply = function(x, f, columns = NULL, group_by, context, ...) {
     contexts[[length(contexts) + 1L]] <<- context
     if ("hash_panel" %in% names(context)) expect_identical(environment(f), baseenv())
     do.call(rlang::local_bindings, c(context,
       list(.env = .GlobalEnv, .frame = environment())))
-    panels <- split(as.data.frame(x), x$Combo)
-    dplyr::bind_rows(lapply(panels, function(panel) f(panel, context)))
+    spark_apply_grouped_result(x, f, columns, group_by, context)
   }, .package = "sparklyr")
   do.call(prep_data, args)
   c1 <- finnts:::read_exact_artifact(info, finnts:::local_artifact_path(info,

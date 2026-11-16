@@ -20,7 +20,7 @@ paths:
 - Keep `Boruta`, `corrr`, and `ranger` in `Suggests`. Declare `ranger` directly because Boruta 10.0 no longer installs it as a strong dependency.
 - Use Boruta's exported `getImpRfZ` ranger adapter. Do not rely on Boruta's changing default importance provider.
 - Preserve maintained-`vip` compatibility coverage and the CI check that runs without any feature-selection package.
-- Keep `nixtlar` in `Suggests`. TimeGPT requires R 4.1 or newer, while FinnTS core must remain installable and loadable on R 4.0 without it.
+- Keep `nixtlar` in `Suggests`. FinnTS core must remain installable and loadable without it.
 - Selecting TimeGPT without `nixtlar` must report the missing engine dependency while leaving other models available.
 - Do not move an optional engine or feature package into `Imports`, `Depends`, or `LinkingTo` without an explicit packaging decision and clean-library validation.
 - When optional-package behavior changes, verify that `DESCRIPTION`, package checks, missing-package tests, and `.github/workflows/R-CMD-check.yaml` still describe the same support boundary.

@@ -149,8 +149,11 @@
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't be
-#'   greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #' @param seed Set seed for random number generator. Numeric value.
 #'
 #' @return Nothing
@@ -906,7 +909,7 @@ load_update_runs <- function(agent_info) {
     if (!nrow(record)) stop("Empty current best-run metadata: ", path, call. = FALSE)
     record
   })
-  metadata <- plyr::rbind.fill(rows)
+  metadata <- bind_rows_fill(rows)
   validate_global_iteration(metadata)
   metadata
 }
@@ -1760,6 +1763,10 @@ update_local_models <- function(agent_info,
   `%op%` <- par_info$foreach_operator
 
   on.exit(par_end(cl), add = TRUE)
+  # series updated one after another in this process share one inner pool
+  local_inner_pool(inner_parallel && is.null(parallel_processing))
+  # each Spark task's share of its node for automatic inner pools (D13)
+  task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
   combo_results <- tryCatch(
     {
@@ -1788,15 +1795,15 @@ update_local_models <- function(agent_info,
             }
           )
 
-          # run update forecast for combo
-          update_result <- update_forecast_combo(
+          # run update forecast for combo; its stages share one inner pool
+          update_result <- with_inner_pool(update_forecast_combo(
             agent_info = agent_info_lean,
             prev_best_run_tbl = prev_run,
             parallel_processing = NULL,
             num_cores = num_cores,
             inner_parallel = inner_parallel,
             seed = seed
-          )
+          ), active = inner_parallel, cores = task_cores)
 
           if (is.list(update_result) && length(update_result$quality_rejected_combos)) return(update_result)
           return(data.frame(Combo = hash_data(combo)))
@@ -2279,6 +2286,10 @@ forecast_new_combos <- function(agent_info,
   `%op%` <- par_info$foreach_operator
 
   on.exit(par_end(cl), add = TRUE)
+  # series forecast one after another in this process share one inner pool
+  local_inner_pool(inner_parallel && is.null(parallel_processing))
+  # each Spark task's share of its node for automatic inner pools (D13)
+  task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
   timestamp <- "default"
 
@@ -2317,8 +2328,8 @@ forecast_new_combos <- function(agent_info,
             return(data.frame(Combo = combo_hash))
           }
 
-          # run forecast with default inputs
-          submission <- capture_forecast_warnings(tryCatch(submit_fcst_run(
+          # run forecast with default inputs; its stages share one inner pool
+          submission <- capture_forecast_warnings(tryCatch(with_inner_pool(submit_fcst_run(
             agent_info = agent_info_lean,
             inputs = default_inputs,
             combo = combo_hash,
@@ -2327,7 +2338,7 @@ forecast_new_combos <- function(agent_info,
             inner_parallel = inner_parallel,
             num_cores = num_cores,
             seed = seed
-          ), finnts_forecast_selection_rejected = function(error) error))
+          ), active = inner_parallel, cores = task_cores), finnts_forecast_selection_rejected = function(error) error))
           run_info <- submission$value
           if (inherits(run_info, "finnts_forecast_selection_rejected")) {
             return(list(quality_error = run_info, warnings = submission$warnings))
@@ -3252,6 +3263,8 @@ update_model_execution <- function(expression, model, recoverable) {
 #' `custom_fixed_results` reuses the first custom fit during mixed built-in retuning.
 #' Recoverable built-in execution errors retain a typed cause for default recovery;
 #' custom source, provider, configuration and artifact errors remain hard.
+#' A built-in model that fails on every back-test split raises tune's first error
+#' note, untyped as before, instead of a missing `.pred` column error.
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
@@ -3350,8 +3363,13 @@ fit_models <- function(run_info,
       NULL
     },
     num_cores = num_cores,
-    task_length = num_cores
+    task_length = inner_task_count(
+      if (isTRUE(retune_hyperparameters)) model_hyperparameter_tbl else NULL,
+      model_train_test_tbl
+    ),
+    inner = TRUE
   )
+  par_end_on_exit(par_info$cl)
 
   inner_cl <- par_info$cl
   inner_packages <- par_info$packages
@@ -3476,6 +3494,7 @@ fit_models <- function(run_info,
             } else {
               NULL
             },
+            num_cores = num_cores,
             date_type = prev_run_log_tbl$date_type,
             fast = FALSE,
             forecast_horizon = forecast_horizon,
@@ -3604,7 +3623,7 @@ fit_models <- function(run_info,
         base::suppressMessages() %>%
         base::suppressWarnings()
 
-      best_param <- update_model_execution(tune::select_best(tune_results, metric = "rmse"),
+      best_param <- update_model_execution(select_best_rmse(tune_results, model),
         model, recoverable)
 
       if (length(colnames(best_param)) == 1) {
@@ -3650,9 +3669,12 @@ fit_models <- function(run_info,
         pkgs = c(inner_packages, "finnts"),
         parallel_over = "everything"
       )
-    ) %>% tune::collect_predictions(), model, recoverable) %>%
+    ), model, recoverable) %>%
       base::suppressMessages() %>%
-      base::suppressWarnings()
+      base::suppressWarnings() %>%
+      # outside update_model_execution(), so a model that failed every split
+      # keeps its untyped error flow; only the message names the cause
+      collect_resample_predictions(model)
 
     if (is_custom) custom_run_check_predictions(refit_tbl, prep_data, create_splits(prep_data, model_train_test_tbl))
 

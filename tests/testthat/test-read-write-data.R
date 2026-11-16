@@ -266,3 +266,159 @@ test_that("strict CSV fallback keeps metadata exceptions as errors", {
     "Skipping empty or unreadable file")
   expect_equal(nrow(legacy), 0L)
 })
+
+test_that("CSV fallback combines files with different columns and keeps mixed columns as text", {
+  directory <- withr::local_tempdir()
+  run_info <- artifact_test_run(directory)
+  paths <- fs::path(directory, c("first.csv", "second.csv"))
+  utils::write.csv(data.frame(Combo = "A", Value = 1.5, Note = NA), paths[[1]], row.names = FALSE)
+  utils::write.csv(data.frame(Combo = "B", Value = "high", Extra = 2L), paths[[2]], row.names = FALSE)
+  testthat::local_mocked_bindings(
+    vroom = function(...) stop("injected CSV read failure", call. = FALSE),
+    .package = "vroom"
+  )
+
+  expect_identical(read_file(run_info, file_list = paths), tibble::tibble(
+    Combo = c("A", "B"), Value = c("1.5", "high"), Note = c(NA, NA), Extra = c(NA, 2L)
+  ))
+})
+
+test_that("a parquet artifact can be rewritten while its read result is still in use", {
+  # final_models() reads a series' forecasts and rewrites the same file; a
+  # memory-mapped read kept the file open and Windows refused the rewrite.
+  skip_if_not_installed("arrow")
+  run_info <- artifact_test_run(withr::local_tempdir(), "parquet")
+  artifact_test_forecast(run_info)
+  path <- artifact_test_path(run_info, "forecasts", "A", "-single_models")
+  forecast <- read_file(run_info, file_list = path)
+  forecast$Best_Model <- "No"
+
+  expect_no_error(write_data(forecast, "A", run_info, "data", "forecasts", "-single_models"))
+  expect_identical(read_file(run_info, file_list = path)$Best_Model, "No")
+})
+
+test_that("parquet forecast reads combine model and simple-average files like CSV", {
+  skip_if_not_installed("arrow")
+  ids <- list()
+  for (format in c("csv", "parquet")) {
+    run_info <- artifact_test_run(withr::local_tempdir(), format)
+    artifact_test_forecast(run_info)
+    # simple-average forecasts save Hyperparameter_ID as the text "NA"
+    average <- artifact_test_forecast(run_info, write_output = FALSE)
+    average$Model_ID <- "meanf--local--R1_naive--local--R1"
+    average$Hyperparameter_ID <- "NA"
+    write_data(average, "A", run_info, "data", "forecasts", "-average_models")
+    forecasts <- read_file(run_info, path = paste0("/forecasts/*", hash_data(run_info$project_name), "-",
+      hash_data(run_info$run_name), "*models.", format))
+    ids[[format]] <- forecasts$Hyperparameter_ID[order(forecasts$Model_ID)]
+  }
+
+  expect_type(ids$parquet, "double")
+  expect_identical(ids$parquet, c(1, NA))
+  expect_identical(ids$parquet, ids$csv)
+})
+
+test_that("settled reads wait only on mounted Spark storage", {
+  expect_length(settle_waits(tempdir()), 0L)
+  expect_length(settle_waits(NULL), 0L)
+  for (path in c("/synfs/notebook/1/mount/project", "/dbfs/mnt/project")) {
+    # must outlast Synapse's default 120-second mount file cache
+    expect_gt(sum(settle_waits(path)), 120)
+  }
+  calls <- 0L
+  expect_silent(result <- read_settled(function() {
+    calls <<- calls + 1L
+    "stale"
+  }, function(value) FALSE, tempdir(), "forecasts"))
+  expect_identical(result, "stale")
+  expect_identical(calls, 1L)
+})
+
+test_that("settled reads retry stale values and read errors, then keep the caller's error", {
+  testthat::local_mocked_bindings(settle_waits = function(path) c(0, 0, 0))
+  values <- list(simpleError("not visible yet"), "stale", "fresh")
+  calls <- 0L
+  read <- function() {
+    calls <<- calls + 1L
+    value <- values[[calls]]
+    if (inherits(value, "error")) stop(value)
+    value
+  }
+  expect_message(result <- read_settled(read, function(value) identical(value, "fresh"),
+    "/synfs/mount/project", "forecasts"), "Re-reading forecasts")
+  expect_identical(result, "fresh")
+  expect_identical(calls, 3L)
+
+  calls <- 0L
+  result <- suppressMessages(read_settled(function() {
+    calls <<- calls + 1L
+    "stale"
+  }, function(value) FALSE, "/synfs/mount/project", "forecasts"))
+  expect_identical(result, "stale")
+  expect_identical(calls, 4L)
+
+  failure <- structure(class = c("finnts_test_storage_error", "error", "condition"),
+    list(message = "still missing", call = NULL))
+  expect_error(suppressMessages(read_settled(function() stop(failure), function(value) TRUE,
+    "/synfs/mount/project", "forecasts")), class = "finnts_test_storage_error")
+
+  # a nested settled read runs once; the enclosing one owns the waits
+  inner_calls <- 0L
+  outer_calls <- 0L
+  expect_error(suppressMessages(read_settled(function() {
+    outer_calls <<- outer_calls + 1L
+    read_settled(function() {
+      inner_calls <<- inner_calls + 1L
+      stop("still missing")
+    }, function(value) TRUE, "/synfs/mount/project", "inner forecasts")
+  }, function(value) TRUE, "/synfs/mount/project", "outer forecasts")), "still missing")
+  expect_identical(c(outer_calls, inner_calls), c(4L, 4L))
+  expect_silent(read_settled(function() "fresh", function(value) TRUE, "/synfs/mount/project", "forecasts"))
+})
+
+test_that("get_forecast_data re-reads forecasts that are stale on mounted storage", {
+  run_info <- artifact_test_run(withr::local_tempdir())
+  artifact_test_log(run_info, combo_variables = "ID", forecast_approach = "bottoms_up")
+  artifact_test_splits(run_info)
+  artifact_test_forecast(run_info, "A")
+  artifact_test_forecast(run_info, "B")
+  original_read <- read_file
+  original_dir_ls <- safe_dir_ls
+  stale_reads <- 0L
+  reads <- 0L
+  listings <- 0L
+  # The first reads return the copy saved before final selection set Best_Model.
+  testthat::local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    safe_dir_ls = function(...) {
+      listings <<- listings + 1L
+      original_dir_ls(...)
+    },
+    read_file = function(run_info, path = NULL, ...) {
+      data <- original_read(run_info, path = path, ...)
+      if (!is.null(path) && grepl("models.", path, fixed = TRUE)) {
+        reads <<- reads + 1L
+        if (reads <= stale_reads) data$Best_Model <- "No"
+      }
+      data
+    }
+  )
+  get_forecast_data(run_info)
+  fresh_listings <- listings
+
+  stale_reads <- 1L
+  reads <- 0L
+  listings <- 0L
+  expect_message(result <- get_forecast_data(run_info), "Re-reading")
+  expect_identical(reads, 2L)
+  expect_setequal(result$Combo[result$Best_Model == "Yes"], c("A", "B"))
+  # re-reads reuse the forecast files listed before the first read
+  expect_identical(listings, fresh_listings)
+
+  stale_reads <- Inf
+  reads <- 0L
+  listings <- 0L
+  expect_error(suppressMessages(get_forecast_data(run_info)), "missing a best model")
+  expect_identical(reads, 3L)
+  expect_identical(listings, fresh_listings)
+})

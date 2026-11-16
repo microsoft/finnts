@@ -176,6 +176,63 @@ test_that("multistep specs are correctly identified by class", {
   }
 })
 
+test_that("multistep engines make tune load finnts on parallel workers", {
+  multistep_specs <- list(
+    cubist_multistep_horizon   = cubist_multistep(),
+    mars_multistep_horizon     = mars_multistep(),
+    glmnet_multistep_horizon   = glmnet_multistep(),
+    svm_poly_multistep_horizon = svm_poly_multistep(),
+    svm_rbf_multistep_horizon  = svm_rbf_multistep(),
+    xgboost_multistep_horizon  = xgboost_multistep()
+  )
+
+  for (engine in names(multistep_specs)) {
+    spec <- parsnip::set_engine(multistep_specs[[engine]], engine)
+    expect_true(
+      "finnts" %in% parsnip::required_pkgs(spec),
+      label = paste(engine, "requires finnts")
+    )
+  }
+})
+
+test_that("multistep engines fit where finnts is loaded but not attached", {
+  # Spark workers, background jobs and finnts:: callers load finnts without
+  # attaching it; the fit functions must still be found there. load_all()
+  # attaches finnts, so this runs against the installed namespace only.
+  namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(file.exists(file.path(namespace_path, "Meta", "package.rds")),
+    "Unattached fitting is verified from the installed namespace")
+  results <- callr::r(function() {
+    loadNamespace("finnts")
+    rows <- 36
+    outcome <- 100 + seq_len(rows) + sin(seq_len(rows) / 3)
+    x <- data.frame(
+      Date = seq(as.Date("2020-01-01"), by = "month", length.out = rows),
+      Target_lag1 = outcome - 1, Target_lag2 = outcome - 2, Target_lag3 = outcome - 3,
+      Target_lag4 = outcome - 4, Target_lag6 = outcome - 6
+    )
+    specs <- list(
+      glmnet_multistep_horizon = finnts::glmnet_multistep(penalty = 0.01, mixture = 0.5),
+      xgboost_multistep_horizon = finnts::xgboost_multistep(trees = 2, tree_depth = 2),
+      cubist_multistep_horizon = finnts::cubist_multistep(committees = 1),
+      mars_multistep_horizon = finnts::mars_multistep(num_terms = 3, prod_degree = 1, prune_method = "backward"),
+      svm_poly_multistep_horizon = finnts::svm_poly_multistep(cost = 1, degree = 1),
+      svm_rbf_multistep_horizon = finnts::svm_rbf_multistep(cost = 1)
+    )
+    fits <- vapply(names(specs), function(engine) {
+      spec <- stats::update(parsnip::set_engine(specs[[engine]], engine), lag_periods = c(1, 2, 3, 4, 6), forecast_horizon = 3)
+      fit <- tryCatch(parsnip::fit_xy(spec, x = x, y = outcome), error = function(e) e)
+      if (inherits(fit, "error")) conditionMessage(fit) else "fitted"
+    }, character(1))
+    list(attached = "package:finnts" %in% search(), fits = fits)
+  }, libpath = .libPaths())
+
+  expect_false(results$attached)
+  for (engine in names(results$fits)) {
+    expect_identical(results$fits[[engine]], "fitted", label = engine)
+  }
+})
+
 test_that("update(selected_features) works on multistep specs", {
   spec <- cubist_multistep(forecast_horizon = 3)
 
@@ -196,7 +253,7 @@ test_that("update(selected_features) errors on standard parsnip specs", {
   )
 })
 
-test_that("automatic MARS grids exclude cross-validation pruning", {
+test_that("automatic MARS grids exclude cross-validation and exhaustive pruning", {
   prune_methods <- dials::grid_regular(
     mars_automatic_prune_method(),
     levels = 10
@@ -204,9 +261,9 @@ test_that("automatic MARS grids exclude cross-validation pruning", {
 
   expect_setequal(
     prune_methods,
-    c("backward", "none", "exhaustive", "forward", "seqrep")
+    c("backward", "none", "forward", "seqrep")
   )
-  expect_false("cv" %in% prune_methods)
+  expect_false(any(c("cv", "exhaustive") %in% prune_methods))
 })
 
 test_that("multistep MARS supports explicit cross-validation pruning", {

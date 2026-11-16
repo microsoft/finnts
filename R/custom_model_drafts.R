@@ -225,7 +225,7 @@ custom_draft_record <- function(state, outcome, failure = NULL, proposal = NULL,
   if (state$stage == "source" && identical(outcome, "accepted") && !is.null(source)) {
     entry$source_fingerprints <- custom_draft_source_fingerprints(source)
   }
-  diagnostics$history <- tail(c(diagnostics$history, list(entry)), 12L)
+  diagnostics$history <- utils::tail(c(diagnostics$history, list(entry)), 12L)
   if (custom_draft_diagnostic_size(diagnostics) > 1048576L && !is.null(diagnostics$rejected_contract)) {
     diagnostics$rejected_contract["proposal"] <- list(NULL)
     diagnostics$rejected_contract$omitted <- TRUE
@@ -319,12 +319,12 @@ custom_draft_review <- function(contract, definition, metadata, diagnostics = NU
     failures <- Filter(function(entry) identical(entry$contract_id, contract_id) && entry$stage == "validation" && entry$outcome ==
       "rejected" && !is.null(entry$failure), diagnostics$history)
     if (length(failures)) {
-      previous <- tail(failures, 1L)[[1L]]
+      previous <- utils::tail(failures, 1L)[[1L]]
       sources <- Filter(function(entry) identical(entry$contract_id, contract_id) && entry$stage == "source" && entry$outcome ==
         "accepted" && identical(entry$version_id, previous$version_id) && !is.null(entry$source_fingerprints), diagnostics$history)
       changed <- NULL
       if (length(sources)) {
-        old <- tail(sources, 1L)[[1L]]$source_fingerprints
+        old <- utils::tail(sources, 1L)[[1L]]$source_fingerprints
         current <- custom_draft_source_fingerprints(definition$source)
         functions <- sort(union(names(old), names(current)), method = "radix")
         changed <- functions[vapply(
@@ -430,7 +430,7 @@ custom_author_feedback <- function(state = NULL, error = NULL, model = NULL) {
   approved <- is.null(error) && (identical(state$status, "approved") || !is.null(model))
   failure <- if (is.null(error) || !length(state$diagnostics$history))
     NULL
-  else tail(state$diagnostics$history, 1L)[[1L]]$failure
+  else utils::tail(state$diagnostics$history, 1L)[[1L]]$failure
   code <- if (approved)
     "approved"
   else if (is.null(error)) {
@@ -677,7 +677,7 @@ custom_draft_drive <- function(state, data, session, llm) {
             reason <- paste(reason, "Field:", state$diagnostics$rejected_contract$field)
           }
           last_contract <- if (length(state$diagnostics$history))
-            tail(state$diagnostics$history, 1L)[[1L]]$failure
+            utils::tail(state$diagnostics$history, 1L)[[1L]]$failure
           if (identical(last_contract$reason, state$diagnostic) && !is.null(last_contract$error_contract)) {
             exhausted_contract <- validate_custom_author_error_contract(last_contract$error_contract)
             if (isTRUE(exhausted_contract$requires_caller_input))
@@ -700,7 +700,7 @@ custom_draft_drive <- function(state, data, session, llm) {
           }
         }
         if (stage == "source" && length(state$diagnostics$history)) {
-          failure <- tail(state$diagnostics$history, 1L)[[1]]$failure
+          failure <- utils::tail(state$diagnostics$history, 1L)[[1]]$failure
           if (!is.null(failure)) {
             reason <- paste(
               reason, "Last failure:", failure$phase, "-", failure$message, failure$source_message %||%
@@ -751,7 +751,7 @@ custom_draft_drive <- function(state, data, session, llm) {
         if (!is.null(state$diagnostics$rejected_contract)) {
           payload$feedback$field <- state$diagnostics$rejected_contract$field
         }
-        last_failure <- tail(state$diagnostics$history, 1L)[[1L]]$failure
+        last_failure <- utils::tail(state$diagnostics$history, 1L)[[1L]]$failure
         if (!is.null(last_failure$error_contract)) {
           payload$feedback$error_contract <- validate_custom_author_error_contract(last_failure$error_contract)
           if (isTRUE(last_failure$error_contract$requires_caller_input)) {
@@ -781,7 +781,7 @@ custom_draft_drive <- function(state, data, session, llm) {
         }
       }
       if (stage == "source" && length(state$diagnostics$history)) {
-        failure <- tail(state$diagnostics$history, 1L)[[1]]$failure
+        failure <- utils::tail(state$diagnostics$history, 1L)[[1]]$failure
         if (!is.null(failure)) {
           payload$failure <- validate_custom_author_failure(failure)
           payload$previous_source <- state$diagnostics$snapshot$source

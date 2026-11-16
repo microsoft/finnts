@@ -2,6 +2,10 @@
 
 #' Initialize custom glmnet parsnip model
 #'
+#' Declares finnts as an engine dependency so tune loads it, and with it this
+#' engine registration, on every parallel worker before fitting. The fit
+#' function is registered with its package, so parsnip finds it where finnts is
+#' loaded but not attached (Spark workers, background jobs, finnts:: callers).
 #'
 #' @return NA
 #' @noRd
@@ -13,6 +17,7 @@ make_glmnet_multistep <- function() {
   parsnip::set_model_engine("glmnet_multistep", mode = "regression", eng = "glmnet_multistep_horizon")
   parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "glmnet")
   parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "parsnip")
+  parsnip::set_dependency("glmnet_multistep", "glmnet_multistep_horizon", "finnts")
 
   # * Args - GLMNET ----
   parsnip::set_model_arg(
@@ -85,7 +90,7 @@ make_glmnet_multistep <- function() {
     value = list(
       interface = "data.frame",
       protect   = c("x", "y"),
-      func      = c(fun = "glmnet_multistep_fit_impl"),
+      func      = c(pkg = "finnts", fun = "glmnet_multistep_fit_impl"),
       defaults  = list()
     )
   )

@@ -4,6 +4,7 @@
 #' @param run_info run info
 #' @param train_test_data train test data
 #' @param parallel_processing parallel processing
+#' @param num_cores Core limit for the LOFO pool, or `NULL` for the default.
 #' @param date_type date_type
 #' @param fast turns off lofo
 #' @param seed seed
@@ -18,6 +19,7 @@ run_feature_selection <- function(input_data,
                                   run_info,
                                   train_test_data,
                                   parallel_processing = NULL,
+                                  num_cores = NULL,
                                   date_type,
                                   fast = FALSE,
                                   seed = 123,
@@ -140,6 +142,7 @@ run_feature_selection <- function(input_data,
               data = input_data_lag,
               train_test_splits = train_test_data,
               parallel_processing = parallel_processing,
+              num_cores = num_cores,
               seed = seed
             ) %>%
               dplyr::filter(Imp >= 0) %>%
@@ -435,31 +438,46 @@ boruta_fn <- function(data,
 
 #' Leave One Feature Out Feature Importance
 #'
-#' @param run_info run info
-#' @param data data
-#' @param train_test_splits train test splits
-#' @param parallel_processing parallel_processing
-#' @param pca pca
+#' Refits xgboost, glmnet and cubist on every validation fold once with all
+#' features (`"Baseline_Model"`) and once without each candidate feature.
+#' A feature's importance is how much the pooled RMSE rises without it.
+#' Runs sequentially or on an inner pool, which joins the caller's
+#' `with_inner_pool()` scope when one is open.
 #'
-#' @return list of most important features using LOFO process
+#' @param run_info run info
+#' @param data Historical prepared data with `Combo`, `Date`, `Target` and
+#'   candidate feature columns.
+#' @param train_test_splits train test splits; only `"Validation"` rows are used.
+#' @param parallel_processing `NULL` or `"local_machine"`.
+#' @param num_cores Core limit for the pool, or `NULL` for the default; the
+#'   pool never has more workers than candidate features plus the baseline.
+#' @param pca pca
+#' @param seed Seed set before each model fit.
+#'
+#' @return Tibble with one row per candidate feature plus `"Baseline_Model"`:
+#'   `LOFO_Var`, `Var_RMSE` and `Imp` (`Var_RMSE` minus the baseline RMSE;
+#'   0 for the baseline). Features whose refits fail are dropped.
 #' @noRd
 lofo_fn <- function(run_info,
                     data,
                     train_test_splits,
                     parallel_processing,
+                    num_cores = NULL,
                     pca = FALSE,
                     seed = 123) {
   # parallel run info
   par_info <- par_start(
     run_info = run_info,
     parallel_processing = parallel_processing,
-    num_cores = NULL,
+    num_cores = num_cores,
     task_length = data %>%
       dplyr::select(-Combo, -Target, -Date) %>%
       colnames() %>%
       c("Baseline_Model") %>%
-      length()
+      length(),
+    inner = TRUE
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages
@@ -491,7 +509,7 @@ lofo_fn <- function(run_info,
       parsnip::set_engine("xgboost")
 
     recipe_spec_xgboost <- data_lofo %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = TRUE,
@@ -505,7 +523,7 @@ lofo_fn <- function(run_info,
 
     # glmnet model
     recipe_spec_glmnet <- data_lofo %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "zv",
         one_hot = FALSE,
@@ -526,7 +544,7 @@ lofo_fn <- function(run_info,
 
     # cubist model
     recipe_spec_cubist <- data_lofo %>%
-      get_recipie_configurable(
+      get_recipe_configurable(
         rm_date = "with_adj",
         step_nzv = "nzv",
         one_hot = FALSE,

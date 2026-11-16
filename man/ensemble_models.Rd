@@ -27,8 +27,10 @@ set to NULL or 'spark'.}
 
 \item{num_cores}{Number of cores to run when parallel processing is set up.
 Used when running parallel computations on local machine or within Azure.
-Default of NULL uses total amount of cores on machine minus one. Can't
-be greater than number of cores on machine minus 1.}
+Default of NULL uses every available core minus one, respecting container
+CPU limits. With \code{parallel_processing = "spark"} and \code{inner_parallel = TRUE}, NULL instead gives each time series its share of the executor
+node's cores (see \code{vignette("parallel-processing")}). Can't be greater
+than the available cores minus one.}
 
 \item{seed}{Set seed for random number generator. Numeric value.}
 }
@@ -57,7 +59,7 @@ data_tbl <- timetk::m4_monthly \%>\%
     id == "M750"
   )
 
-run_info <- set_run_info()
+run_info <- set_run_info(run_name = "ensemble_models_example")
 
 prep_data(run_info,
   input_data = data_tbl,

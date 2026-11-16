@@ -42,8 +42,8 @@
 #'   one after another. Value of 'local_machine' leverages all cores on current machine Finn is running on.
 #'   Value of 'spark' runs time series in parallel on a spark cluster in Azure Databricks/Synapse.
 #' @param num_cores Number of cores to run when parallel processing is set up. Used when running parallel computations
-#'   on local machine or within Azure. Default of NULL uses total amount of cores on machine minus one. Can't be greater
-#'   than number of cores on machine minus 1.
+#'   on local machine or within Azure. Default of NULL uses every available core minus one, respecting container CPU
+#'   limits. Can't be greater than the available cores minus one.
 #' @param fourier_periods List of values to use in creating fourier series as features. Default of NULL automatically chooses
 #'   these values based on the date_type.
 #' @param lag_periods List of values to use in creating lag features. Default of NULL automatically chooses these values
@@ -78,7 +78,7 @@
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "prep_data_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -346,6 +346,7 @@ prep_data <- function(run_info,
       num_cores = num_cores,
       task_length = length(unique(filtered_initial_prep_tbl$Combo))
     )
+    par_end_on_exit(par_info$cl)
 
     cl <- par_info$cl
     packages <- par_info$packages
@@ -554,6 +555,10 @@ prep_data <- function(run_info,
     # clean up any parallel run process
     par_end(cl)
   } else if (parallel_processing == "spark") {
+    # an explicit schema skips sparklyr's schema inference, which runs this
+    # function on a sample of partial series and writes their prep files
+    result_columns <- prep_spark_result_columns(box_cox, stationary, clean_outliers)
+
     final_data <- filtered_initial_prep_tbl %>%
       adjust_df(return_type = "sdf") %>%
       sparklyr::spark_apply(
@@ -742,8 +747,10 @@ prep_data <- function(run_info,
             )
           }
 
-          return(data.frame(return_tbl))
+          # the worker prepends Combo and maps columns to the schema by position
+          return(data.frame(return_tbl)[setdiff(names(result_columns), "Combo")])
         },
+        columns = result_columns,
         group_by = "Combo",
         context = list(
           external_regressors = external_regressors,
@@ -780,9 +787,11 @@ prep_data <- function(run_info,
           stationary = stationary,
           make_stationary = make_stationary,
           apply_box_cox = apply_box_cox,
-          global_xregs_future_list = global_xregs_future_list
+          global_xregs_future_list = global_xregs_future_list,
+          result_columns = result_columns
         )
-      )
+      ) %>%
+      dplyr::collect()
   }
 
   # check if all time series combos ran correctly
@@ -1010,8 +1019,12 @@ custom_input_columns <- function(data, target_variable) {
 }
 
 # Hash original C1 input deterministically before any completed-run shortcut.
-# Both backends hash the same per-series map; Spark collects only that small map.
-# Sorted rows/columns make input ordering irrelevant; no artifacts are written.
+# Both backends hash the same per-series map of Combo and source_id; Spark
+# collects only that small map. Its grouped worker prepends Combo to each
+# result, so the Spark function returns only source_id under an explicit
+# schema; returning Combo as well would add a duplicate column and change the
+# fingerprint. Sorted rows/columns make input ordering irrelevant; no artifacts
+# are written.
 custom_source_identity <- function(data) {
   hash_panel <- function(data) {
     data <- as.data.frame(data)[, sort(names(data)), drop = FALSE]
@@ -1023,10 +1036,11 @@ custom_source_identity <- function(data) {
   environment(hash_panel) <- baseenv()
   if (inherits(data, "tbl_spark")) {
     hash_group <- function(df, context) {
-      data.frame(Combo = unique(df$Combo), source_id = context$hash_panel(df))
+      data.frame(source_id = context$hash_panel(df))
     }
     environment(hash_group) <- baseenv()
     hashes <- sparklyr::spark_apply(data, hash_group,
+      columns = list(Combo = "character", source_id = "character"),
       group_by = "Combo", context = list(hash_panel = hash_panel)) %>% dplyr::collect()
   } else {
     hashes <- dplyr::bind_rows(lapply(split(as.data.frame(data), data$Combo), function(panel) {
@@ -1485,6 +1499,41 @@ get_date_regex <- function(date_type) {
   return(date_regex)
 }
 
+#' Spark output schema for prep_data()'s per-series transformation table
+#'
+#' Passed to `sparklyr::spark_apply()` so Spark skips schema inference, which
+#' would run the prep function on a sample of partial series and write their
+#' prep files. The grouped worker prepends the group column (`Combo`) to each
+#' result and maps columns to this schema by position, so the schema starts
+#' with `Combo` and the prep function must return the remaining columns in this
+#' order. The columns match the local path's `-orig_combo_info` table:
+#' `Combo`, `Combo_Hash`, the Box-Cox lambda when `box_cox`, and the Target
+#' differencing values when `stationary`. `Target_Original` differencing values
+#' are added only with `clean_outliers`, the only setting that creates
+#' `Target_Original` (see [clean_outliers_missing_values()]).
+#'
+#' @param box_cox logical; Box-Cox transformation on
+#' @param stationary logical; differencing on
+#' @param clean_outliers logical; outlier cleaning on
+#'
+#' @return Named list of Spark column types, in output order.
+#' @noRd
+prep_spark_result_columns <- function(box_cox, stationary, clean_outliers) {
+  columns <- list(Combo = "character", Combo_Hash = "character")
+  if (box_cox) {
+    columns$Box_Cox_Lambda <- "double"
+  }
+  if (stationary) {
+    columns$Diff_Value1 <- "double"
+    columns$Diff_Value2 <- "double"
+    if (clean_outliers) {
+      columns$Target_Original_Diff_Value1 <- "double"
+      columns$Target_Original_Diff_Value2 <- "double"
+    }
+  }
+  columns
+}
+
 #' Apply Box‑Cox transformation
 #'
 #' @param df input data
@@ -1642,6 +1691,36 @@ make_stationary <- function(df) {
   return(list(data = tibble::tibble(final_tbl), diff_info = diff_info))
 }
 
+#' Add right-aligned rolling-window features to prepared data
+#'
+#' Replaces `timetk::tk_augment_slidify()`, which builds its column-by-period
+#' grid with the deprecated `purrr::cross_df()`. It reproduces that function's
+#' ungrouped output exactly: each window is a partial, right-aligned
+#' `timetk::slidify_vec()` summary. Results are ordered by period, then column
+#' (all columns for the first period, then the next), take `window_names` in
+#' that order, and overwrite existing columns with the same names.
+#'
+#' @param data Ungrouped data frame.
+#' @param columns Candidate column names. Absent columns are skipped; the rest
+#'   keep this order.
+#' @param periods Window lengths in rows.
+#' @param .f Summary function or formula applied to each window.
+#' @param window_names New column names, one per kept column and period, in
+#'   period-major order. A length mismatch errors, as in timetk.
+#'
+#' @return `data` with the rolling-window columns added or replaced.
+#' @noRd
+augment_rolling_windows <- function(data, columns, periods, .f, window_names) {
+  columns <- intersect(columns, colnames(data))
+  grid <- tidyr::expand_grid(period = periods, column = columns)
+  windows <- purrr::map2(grid$column, grid$period, function(column, period) {
+    timetk::slidify_vec(data[[column]], .f = .f, .period = period, .align = "right", .partial = TRUE)
+  })
+  windows <- dplyr::bind_cols(purrr::set_names(windows, window_names))
+  data[, colnames(windows)] <- windows
+  data
+}
+
 #' Function to perform feature engineering according to R1 recipe
 #'
 #' @param data data frame
@@ -1709,39 +1788,33 @@ multivariate_prep_recipe_1 <- function(data,
     timetk::tk_augment_lags(tidyselect::contains(c("Target", setdiff(external_regressors, xregs_future_values_list))), .lags = lag_periods) %>% # create standard lags
     dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", lag_periods))) %>% # drop original target cols if found
     tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
-    timetk::tk_augment_slidify( # create rolling windows
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ mean(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows( # create rolling windows
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ mean(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_Avg")
         }
       ) %>%
         unlist()
     ) %>%
-    timetk::tk_augment_slidify(
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ sum(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows(
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ sum(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_Sum")
         }
       ) %>%
         unlist()
     ) %>%
-    timetk::tk_augment_slidify(
-      tidyselect::any_of(stringr::str_c("Target_lag", lag_periods)),
-      .f = ~ sd(.x, na.rm = TRUE),
-      .period = rolling_window_periods,
-      .partial = TRUE,
-      .align = "right",
-      .names = lapply(rolling_window_periods,
+    augment_rolling_windows(
+      stringr::str_c("Target_lag", lag_periods),
+      rolling_window_periods,
+      ~ sd(.x, na.rm = TRUE),
+      lapply(rolling_window_periods,
         FUN = function(x) {
           stringr::str_c(stringr::str_c("Target_lag", lag_periods, "_roll"), x, "_StdDev")
         }
@@ -1866,39 +1939,33 @@ multivariate_prep_recipe_2 <- function(data,
       ) %>%
       dplyr::select(-tidyselect::any_of(stringr::str_c("Target_Original_lag", unique(c(lag_periods_r2, lag_periods))))) %>% # drop original target cols if found
       tidyr::fill(tidyselect::contains(c("Target", external_regressors)), .direction = "up") %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ mean(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ mean(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_Avg")
           }
         ) %>%
           unlist()
       ) %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ sum(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ sum(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_Sum")
           }
         ) %>%
           unlist()
       ) %>%
-      timetk::tk_augment_slidify(
-        tidyselect::any_of(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)))),
-        .f = ~ sd(.x, na.rm = TRUE),
-        .period = rolling_window_periods,
-        .partial = TRUE,
-        .align = "right",
-        .names = lapply(rolling_window_periods,
+      augment_rolling_windows(
+        stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods))),
+        rolling_window_periods,
+        ~ sd(.x, na.rm = TRUE),
+        lapply(rolling_window_periods,
           FUN = function(x) {
             stringr::str_c(stringr::str_c("Target_lag", unique(c(lag_periods_r2, lag_periods)), "_roll"), x, "_StdDev")
           }

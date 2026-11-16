@@ -57,8 +57,11 @@
 #'   set to NULL or 'spark'.
 #' @param num_cores Number of cores to run when parallel processing is set up.
 #'   Used when running parallel computations on local machine or within Azure.
-#'   Default of NULL uses total amount of cores on machine minus one. Can't be
-#'   greater than number of cores on machine minus 1.
+#'   Default of NULL uses every available core minus one, respecting container
+#'   CPU limits. With `parallel_processing = "spark"` and `inner_parallel =
+#'   TRUE`, NULL instead gives each time series its share of the executor
+#'   node's cores (see `vignette("parallel-processing")`). Can't be greater
+#'   than the available cores minus one.
 #' @param seed Set seed for random number generator. Numeric value.
 #' @param debug If TRUE, will stop on errors and show traceback.
 #'
@@ -74,7 +77,7 @@
 #'     Date <= "2015-06-01"
 #'   )
 #'
-#' run_info <- set_run_info()
+#' run_info <- set_run_info(run_name = "train_models_example")
 #'
 #' prep_data(run_info,
 #'   input_data = data_tbl,
@@ -118,6 +121,8 @@ train_models <- function(run_info,
     parallel_processing,
     inner_parallel
   )
+  # inner pools only; num_cores itself is passed on unchanged
+  inner_num_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
   # get input values
   log_df <- read_file(run_info,
@@ -385,10 +390,13 @@ train_models <- function(run_info,
     num_cores = num_cores,
     task_length = length(current_combo_list_final)
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages
   `%op%` <- par_info$foreach_operator
+  # series trained one after another in this process share one inner pool
+  local_inner_pool(inner_parallel && is.null(parallel_processing))
 
   # submit tasks
   prepared_custom_workflows <- if (!is.null(custom_run)) model_workflow_tbl else NULL
@@ -408,7 +416,9 @@ train_models <- function(run_info,
     .export = c("list_files", "safe_dir_ls"),
     .noexport = NULL
   ) %op%
-    {
+    # a Spark task trains one series; its feature selection and training share
+    # one inner pool (sequential runs already share the scope opened above)
+    with_inner_pool({
       # get time series
       combo_hash <- x
 
@@ -453,6 +463,7 @@ train_models <- function(run_info,
         model_train_test_tbl <- model_train_test_tbl
         model_workflow_tbl <- model_workflow_tbl
         model_hyperparameter_tbl <- model_hyperparameter_tbl
+        inner_num_cores <- inner_num_cores
         seed <- seed
         combo_variables <- combo_variables
         negative_fcst_adj <- negative_fcst_adj
@@ -496,6 +507,7 @@ train_models <- function(run_info,
               } else {
                 NULL
               },
+              num_cores = inner_num_cores,
               date_type = date_type,
               fast = FALSE,
               forecast_horizon = forecast_horizon,
@@ -520,6 +532,7 @@ train_models <- function(run_info,
               } else {
                 NULL
               },
+              num_cores = inner_num_cores,
               date_type = date_type,
               fast = FALSE,
               forecast_horizon = forecast_horizon,
@@ -539,8 +552,9 @@ train_models <- function(run_info,
         } else {
           NULL
         },
-        num_cores = num_cores,
-        task_length = num_cores
+        num_cores = inner_num_cores,
+        task_length = inner_task_count(model_hyperparameter_tbl, model_train_test_tbl),
+        inner = TRUE
       )
 
       inner_cl <- par_info$cl
@@ -707,7 +721,7 @@ train_models <- function(run_info,
           base::suppressMessages() %>%
           base::suppressWarnings()
 
-        best_param <- tune::select_best(tune_results, metric = "rmse")
+        best_param <- select_best_rmse(tune_results, model)
 
         if (length(colnames(best_param)) == 1) {
           hyperparameter_id <- 1
@@ -733,7 +747,7 @@ train_models <- function(run_info,
           custom_run_fit_resamples(finalized_workflow, prep_data,
             create_splits(prep_data, model_train_test_tbl),
             tune::control_resamples(allow_par = inner_parallel, save_pred = TRUE,
-              pkgs = inner_packages, parallel_over = "everything")) %>%
+              pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
             base::suppressMessages() %>% base::suppressWarnings()
         } else tune::fit_resamples(
           object = finalized_workflow,
@@ -742,11 +756,11 @@ train_models <- function(run_info,
           control = tune::control_resamples(
             allow_par = inner_parallel,
             save_pred = TRUE,
-            pkgs = inner_packages,
+            pkgs = c(inner_packages, "finnts"),
             parallel_over = "everything"
           )
         ) %>%
-          tune::collect_predictions() %>%
+          collect_resample_predictions(model) %>%
           base::suppressMessages() %>%
           base::suppressWarnings()
 
@@ -933,7 +947,7 @@ train_models <- function(run_info,
       }
 
       return(data.frame(Combo_Hash = combo_hash))
-    } %>%
+    }, active = inner_parallel && identical(parallel_processing, "spark"), cores = inner_num_cores) %>%
     base::suppressPackageStartupMessages()
 
   # clean up any parallel run process
@@ -1066,6 +1080,66 @@ negative_fcst_adj <- function(data,
   }
 
   return(fcst_final)
+}
+
+#' Explain why every resample of a tune result failed
+#'
+#' tune records a model error on a resample as a note. When every resample
+#' failed it reports only "All models failed" (tuning) or returns no `.pred`
+#' column (`fit_resamples()`), so the cause, such as a missing foundation-model
+#' API credential, was lost in Spark tasks and Agent logs.
+#'
+#' @param results A `tune_results` object from `tune::tune_grid()` or
+#'   `tune::fit_resamples()`.
+#' @param model Model name for the message.
+#' @param splits Kind of split that failed: "validation" or "back-test".
+#'
+#' @return One string naming the model, the split kind and tune's first error
+#'   note, or saying tune recorded none.
+#' @noRd
+resample_failure_message <- function(results, model, splits) {
+  notes <- tryCatch(tune::collect_notes(results), error = function(e) NULL)
+  if (is.data.frame(notes) && "type" %in% names(notes)) notes <- notes[notes$type == "error", , drop = FALSE]
+  reason <- if (is.data.frame(notes) && nrow(notes) > 0L && "note" %in% names(notes)) {
+    notes$note[[1]]
+  } else {
+    "tune recorded no error"
+  }
+  paste0("Model '", model, "' failed on every ", splits, " split: ", reason)
+}
+
+#' Back-test predictions of a `fit_resamples()` result
+#'
+#' @param resamples A `tune::fit_resamples()` result run with `save_pred = TRUE`.
+#' @param model Model name for the error.
+#'
+#' @return `tune::collect_predictions()` output, unchanged when any resample
+#'   predicted. When none did, errors with `resample_failure_message()` instead
+#'   of leaving callers to fail on a missing `.pred` column.
+#' @noRd
+collect_resample_predictions <- function(resamples, model) {
+  predictions <- tune::collect_predictions(resamples)
+  if (!".pred" %in% names(predictions)) {
+    stop(resample_failure_message(resamples, model, "back-test"), call. = FALSE)
+  }
+  predictions
+}
+
+#' Best RMSE hyperparameters of a tuning result
+#'
+#' @param tune_results A `tune::tune_grid()` result.
+#' @param model Model name for the error.
+#'
+#' @return `tune::select_best(tune_results, metric = "rmse")`. When every
+#'   candidate failed on every validation split, errors with
+#'   `resample_failure_message()` instead of tune's "All models failed".
+#' @noRd
+select_best_rmse <- function(tune_results, model) {
+  failed <- vapply(tune_results$.metrics, function(metrics) is.null(metrics) || nrow(metrics) == 0L, logical(1))
+  if (length(failed) > 0L && all(failed)) {
+    stop(resample_failure_message(tune_results, model, "validation"), call. = FALSE)
+  }
+  tune::select_best(tune_results, metric = "rmse")
 }
 
 #' Function to get train test splits in rsample format

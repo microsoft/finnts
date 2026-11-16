@@ -8,12 +8,12 @@ utils::globalVariables(c(
   "Model_Type", "Number", "Number_Char", "Origin", "Path", "Prediction", "RMSE", "Recipe",
   "Recipe_ID", "Residual", "Residual_Std_Dev", "Rolling_MAPE", "Run_Type", "SE", "Slice_ID",
   "Sum", "Target", "Test_End", "Train_End", "Train_Test_ID", "Type", "Variable",
-  "combo_list", "data", "get_export_packages", "hi_80", "hi_95", "i", "lo_80", "lo_95",
+  "combo_list", "data", "hi_80", "hi_95", "i", "lo_80", "lo_95",
   "model_spec_1", "name", "path_ext", "predict", "read.csv", "sc", "weighted_MAPE", "where",
   "x", "num_cores", "run_info", "negative_forecast", "Forecast_Adj", "Final_Col", "lag_val", "libs",
   ".config", "Forecast_Tbl", "Model_Workflow", "id", "model_run",
   "Auto_Accept", "Feature", "Imp", "Importance", "LOFO_Var", "Var_RMSE", "Vote", "Votes", "desc",
-  "term", "Column", "Box_Cox_Lambda", "get_recipie_configurable", "Agg", "Unique", "Var",
+  "term", "Column", "Box_Cox_Lambda", "Agg", "Unique", "Var",
   "Var_Combo", "regressor", "regressor_tbl", "value_level_iter", ".actual", ".fitted",
   "forecast_horizon", "lag", "new_data", "object", "fit", "Row_Num", "Run_Number", "weight",
   "Total", "Weight", "batch", "variable", "type", "Avg_dCor", "Drop", "Has_Future",
@@ -29,7 +29,8 @@ utils::globalVariables(c(
   "is_stationary", "outlier_pct", "model_class", "section", "value", "Hierarchy_Level",
   "Sort_Order", "run_id", "date_type", "file_path", "models_to_run", "underscore_count",
   "max_iterations", "run_complete", "has_best", "fold_count", "actual_ids", "missing_ids",
-  ".finnts_row", ".finnts_horizon", ".finnts_combo", ".finnts_date"
+  ".finnts_row", ".finnts_horizon", ".finnts_combo", ".finnts_date", "chunk", "job", "best_rows",
+  "expected_key"
 ))
 
 #' @importFrom magrittr %>%
@@ -55,6 +56,9 @@ utils::globalVariables(c(
 
 #' @importFrom glmnet glmnet
 
+# tune's future backend calls future.apply::future_lapply() on inner pools.
+#' @importFrom future.apply future_lapply
+
 #' @importFrom rules cubist_fit committees max_rules
 
 #' @importFrom stats median
@@ -78,6 +82,37 @@ xgb_get_feature_names <- function(model) {
     xgboost::getinfo(model, "feature_name"),
     error = function(e) model$feature_names
   )
+}
+
+#' Row-bind data frames, filling missing columns
+#'
+#' Replaces `plyr::rbind.fill()` for the base-R data frames finnts reads from
+#' CSV files, where a column can be logical, integer, double or text and can be
+#' missing from some files. Columns keep their first-appearance order and are
+#' `NA` where a table lacks them. A column that is text in any table becomes
+#' text everywhere, as rbind.fill's assignment did, because
+#' `dplyr::bind_rows()` refuses to combine text with numbers; logical, integer
+#' and double columns combine as numbers. Numbers become text with
+#' `as.character()`, matching rbind.fill's values.
+#'
+#' @param tables List of data frames; `NULL` elements are dropped.
+#'
+#' @return The single remaining table unchanged, `NULL` when none remain,
+#'   otherwise one data frame (a tibble only when the first table is one).
+#' @noRd
+bind_rows_fill <- function(tables) {
+  tables <- Filter(Negate(is.null), tables)
+  if (!length(tables)) return(NULL)
+  if (length(tables) == 1L) return(tables[[1]])
+  columns <- unique(unlist(lapply(tables, names), use.names = FALSE))
+  text <- columns[vapply(columns, function(column) {
+    any(vapply(tables, function(table) is.character(table[[column]]), logical(1)))
+  }, logical(1))]
+  tables <- lapply(tables, function(table) {
+    for (column in intersect(text, names(table))) table[[column]] <- as.character(table[[column]])
+    table
+  })
+  dplyr::bind_rows(tables)
 }
 
 

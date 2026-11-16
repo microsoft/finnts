@@ -43,7 +43,16 @@ prep_models(
   num_hyperparameters = 1,
   pca = TRUE
 )
-train_models(run_info, feature_selection = TRUE)
+  # LOFO is covered by test-feature-selection-lofo.R. Stubbing it here, with a
+  # vote for every candidate, avoids refitting three models per feature and lag.
+  testthat::with_mocked_bindings(
+    train_models(run_info, feature_selection = TRUE),
+    lofo_fn = function(run_info, data, ...) {
+      features <- setdiff(colnames(data), c("Combo", "Date", "Target"))
+      tibble::tibble(LOFO_Var = c(features, "Baseline_Model"), Var_RMSE = 0, Imp = 0)
+    },
+    .package = "finnts"
+  )
 
 trained_models <- get_trained_models(run_info)
 forecast <- read_unselected_forecast_data(run_info)$forecast

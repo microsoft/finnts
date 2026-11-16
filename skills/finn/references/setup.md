@@ -32,7 +32,8 @@ Rscript scripts/install_finnts.R --force=true --confirm=true   # reinstall even 
 finnts always installs from the GitHub repository so it matches the skill version;
 the CRAN release can lag behind and may lack `chat_copilot()`. GitHub installs use the
 `remotes` package (installed automatically). Dependencies install from CRAN, as
-prebuilt binaries where CRAN provides them (Windows and macOS).
+prebuilt binaries where CRAN provides them (Windows and macOS). Installed packages
+that finnts, or any package it depends on, needs in a newer version are upgraded too.
 
 Helpers: jsonlite, ps, processx, digest, readxl, and ellmer (skip with
 `--include_llm=false`). If the default library is not writable, the script installs to

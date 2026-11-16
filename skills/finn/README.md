@@ -147,7 +147,7 @@ definitions of terms like WMAPE and back test are in
 - **Local resource bookkeeping** is kept under `~/.finn`: a registry records run
   locations, process identity, and worker allocations across your storage folders.
   It does not copy input rows or forecasts. Finn budgets 80% of total RAM at an
-  estimated 300 MB per worker, capped at logical processors minus one. Available
+  estimated 300 MB per worker, capped at detected CPU cores minus one. Available
   RAM affects warnings, not that budget; actual memory use can exceed the estimate.
   See [parallel processing](references/parallelism.md) for shared and batch runs.
 
