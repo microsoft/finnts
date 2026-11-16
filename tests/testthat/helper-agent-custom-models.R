@@ -88,16 +88,18 @@ local_custom_default_grid <- function(.local_envir = parent.frame()) {
 # The cache belongs only to this test invocation. Each caller receives an
 # isolated directory copy and fresh Chat templates; source bytes/identities are
 # preserved. Never mutate cached projects or use mocked fitting/publication.
+# builtin_winner (local only) also searches meanf and pins it as the saved
+# winner, so the enrolled custom model is a non-winning comparison.
 custom_update_fixture <- local({
   cache <- new.env(parent = emptyenv())
-  function(global = FALSE, updated = TRUE, .local_envir = parent.frame()) {
+  function(global = FALSE, updated = TRUE, builtin_winner = FALSE, .local_envir = parent.frame()) {
     mode <- if (global) "global" else "local"
-    key <- paste(mode, if (updated) "updated" else "initial", sep = "-")
+    key <- paste(mode, if (updated) "updated" else "initial", if (builtin_winner) "builtin" else "custom", sep = "-")
+    models <- if (global) "replay_mean---other_mean" else if (builtin_winner) "replay_mean---meanf" else "replay_mean"
     if (!exists(key, envir = cache, inherits = FALSE)) {
       local_custom_update_runtime()
       path <- withr::local_tempdir(.local_envir = cache)
       series <- if (global) c("first", "second") else "first"
-      models <- if (global) "replay_mean---other_mean" else "replay_mean"
       data <- data.frame(Date = rep(seq(as.Date("2020-01-01"),
         by = "month", length.out = 24), length(series)),
         series = rep(series, each = 24), value = 100)
@@ -133,6 +135,20 @@ custom_update_fixture <- local({
           write_data(average, combo, child, "data", "forecasts", "-average_models")
         }
       }
+      if (builtin_winner) {
+        best <- get_best_agent_run(previous)
+        child <- previous$project_info
+        child$project_name <- paste0(child$project_name, "_", hash_data("first"))
+        child$run_name <- best$best_run_name[[1]]
+        rows <- read_selection_file(child, "forecasts", "-single_models", "first")
+        rows$Best_Model <- ifelse(rows$Model_ID == "meanf--local--R1", "Yes", "No")
+        write_data(rows, "first", child, "data", "forecasts", "-single_models")
+        average <- read_selection_file(child, "forecasts", "-average_models", "first", optional = TRUE)
+        if (nrow(average)) {
+          average$Best_Model <- "No"
+          write_data(average, "first", child, "data", "forecasts", "-average_models")
+        }
+      }
       args$input_data <- rbind(data, data.frame(Date = as.Date("2022-01-01"),
         series = series, value = 125))
       args$overwrite <- TRUE
@@ -151,7 +167,6 @@ custom_update_fixture <- local({
     destination <- file.path(withr::local_tempdir(.local_envir = .local_envir), "project")
     fs::dir_copy(template$args$project_info$path, destination)
     result <- template[setdiff(names(template), "hashes")]
-    models <- if (global) "replay_mean---other_mean" else "replay_mean"
     for (field in c("args", "previous", "current")) {
       result[[field]]$project_info$path <- destination
       result[[field]]$llm <- custom_update_chat(models)

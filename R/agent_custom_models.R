@@ -853,9 +853,23 @@ agent_custom_default_run <- function(record, combo_hash) {
   paste0("agent_", record$run_id, "_", combo_hash, "_default")
 }
 
-# Audit replay outputs using the exact per-series component mapping, not the
-# full parent search pool. One shared fit union and all required native keys are
-# checked before reuse/publication. Damage and foreign identities are hard errors.
+# List full IDs of enrolled custom models compatible with one update child's mode
+# ("local" or "global"), in enrollment order, using the C1 training identity.
+# Custom updates refit and publish these beside each saved winner for comparison;
+# an ID that is already a series' winner component keeps its winner role there.
+# Takes an already validated contract; built-ins are excluded. No I/O.
+agent_custom_comparison_ids <- function(contract, model_type) {
+  aliases <- intersect(contract$mode_models[[model_type]], names(contract$envelopes))
+  vapply(aliases, function(alias) {
+    paste0("custom-", contract$envelopes[[alias]]$definition$version_id, "--", model_type, "--C1")
+  }, character(1), USE.NAMES = FALSE)
+}
+
+# Audit replay outputs using the exact per-series component mapping plus the
+# always-run custom comparisons, not the full parent search pool. One shared fit
+# union and all required native keys, including each comparison's own rows, are
+# checked before reuse/publication. Damage, foreign identities and outputs saved
+# without comparisons are hard errors.
 audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) {
   record <- read_agent_custom_update(agent_info, TRUE)
   if (!identical(log$custom_agent_update_id, paste0("custom-update-", record$manifest_id))) {
@@ -864,8 +878,15 @@ audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) 
   winners <- record$winners[vapply(record$winners, function(winner) identical(agent_custom_update_run(record, winner), run_info$run_name), logical(1))]
   if (!length(winners)) stop("Custom update child is outside its pinned provenance.", call. = FALSE)
   global <- winners[[1]]$model_type == "global"
-  expected_ids <- unique(unlist(lapply(winners, function(winner) winner$components), use.names = FALSE))
-  saved <- read_update_result(run_info, names(winners), global, agent_info$forecast_horizon)
+  comparisons <- agent_custom_comparison_ids(agent_info$custom_agent_contract, if (global) "global" else "local")
+  expected_ids <- unique(c(unlist(lapply(winners, function(winner) winner$components), use.names = FALSE), comparisons))
+  saved <- read_update_result(run_info, names(winners), global, agent_info$forecast_horizon,
+    comparison_ids = comparisons)
+  if (!is.null(saved) && length(setdiff(comparisons, saved$models$Model_ID)) &&
+    all(saved$models$Model_ID %in% expected_ids)) {
+    stop("Custom update outputs do not include every enrolled custom model for comparison; ",
+      "start a new Agent version with iterate_forecast().", call. = FALSE)
+  }
   if (is.null(saved) || !setequal(saved$models$Model_ID, expected_ids)) stop("Custom update has damaged or foreign fitted outputs.", call. = FALSE)
   candidates <- custom_run_candidates(custom, !global, global)
   custom_run_membership(saved$models, custom, candidates)
@@ -874,9 +895,10 @@ audit_agent_custom_update_result <- function(agent_info, run_info, log, custom) 
   for (combo in names(winners)) {
     rows <- saved$forecasts[saved$forecasts$Combo == combo, , drop = FALSE]
     winner <- winners[[combo]]
-    expected <- candidates[candidates$Model_ID %in% winner$components, , drop = FALSE]
+    published <- unique(c(winner$components, comparisons))
+    expected <- candidates[candidates$Model_ID %in% published, , drop = FALSE]
     custom_run_membership(unique(rows[, c("Model_ID", "Model_Name", "Model_Type", "Recipe_ID")]), custom, expected, averages = TRUE)
-    if (!setequal(unique(rows$Model_ID[rows$Recipe_ID != "simple_average"]), winner$components) ||
+    if (!setequal(unique(rows$Model_ID[rows$Recipe_ID != "simple_average"]), published) ||
       !identical(unique(rows$Model_ID[rows$Best_Model == "Yes"]), winner$selected_id)) {
       stop("Custom update saved component mapping changed.", call. = FALSE)
     }

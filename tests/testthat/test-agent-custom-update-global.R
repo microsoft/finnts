@@ -9,7 +9,8 @@ test_that("global custom replay preserves saved component subsets from one share
   forecast <- get_agent_forecast(current)
   expect_equal(unique(forecast$Forecast[forecast$Train_Test_ID == 1]), 101)
   expect_setequal(unique(forecast$Model_ID[forecast$Combo == "first"]), c(ids, paste(sort(ids), collapse = "_")))
-  expect_identical(unique(forecast$Model_ID[forecast$Combo == "second"]), ids[[1]])
+  expect_setequal(unique(forecast$Model_ID[forecast$Combo == "second"]), ids)
+  expect_identical(unique(forecast$Model_ID[forecast$Combo == "second" & forecast$Best_Model == "Yes"]), ids[[1]])
   expect_length(unique(get_best_agent_run(current)$best_run_name), 1L)
   expect_false(any(grepl("^meanf--", forecast$Model_ID)))
   local_mocked_bindings(

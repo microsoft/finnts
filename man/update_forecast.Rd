@@ -153,7 +153,13 @@ in the new parent, subject to approved history and driver requirements.
 The raw C1 recipe, CSV data on supported storage, RDS objects and no inner parallelism
 remain required. The completed predecessor, exact selected components,
 current input signatures and replay controls are pinned before child fitting.
-Replay retains full custom version IDs and per-series global subsets. Custom
+Replay retains full custom version IDs and per-series global subsets. Every
+enrolled custom model compatible with a series' winning local or global run
+is also refit and returned beside the winner with \code{Best_Model = "No"}, even
+when it did not win, so it can be compared with Finn's selected model. These
+comparisons are never averaged into or substituted for the winner, do not
+gate its acceptance and are excluded from update accuracy metrics; their
+failures stop the update. Custom
 logic is never regenerated or tuned; mixed retuning reuses fixed custom
 results while retuning selected built-ins only. Temporal custom resampling
 evaluates complete horizons from existing predictors but preserves the
