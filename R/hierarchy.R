@@ -1439,7 +1439,7 @@ external_regressor_mapping <- function(data,
       next_grains <- list()
       for (grain in grains) {
         remaining <- multi_value_vars[seq_along(multi_value_vars) >
-          match(tail(grain, 1), multi_value_vars)]
+          match(utils::tail(grain, 1), multi_value_vars)]
         for (variable in remaining) {
           next_grains[[length(next_grains) + 1L]] <- c(grain, variable)
           if (length(next_grains) > 1024L - candidates_checked) {
@@ -1474,7 +1474,7 @@ aggregate_hierarchy_regressor <- function(input_data, bottom_level_tbl, nodes,
   bottom_names <- colnames(bottom_level_tbl)[-1]
   source_columns <- strsplit(source_level, "---", fixed = TRUE)[[1]]
   source_keys <- dplyr::distinct(input_data[, source_columns, drop = FALSE])
-  source_id <- tail(make.unique(c(names(input_data), ".source_id")), 1)
+  source_id <- utils::tail(make.unique(c(names(input_data), ".source_id")), 1)
   source_keys[[source_id]] <- seq_len(nrow(source_keys))
   source_data <- dplyr::left_join(
     input_data[, unique(c("Combo", "Date", regressor, source_columns)), drop = FALSE],

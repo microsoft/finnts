@@ -29,7 +29,8 @@ utils::globalVariables(c(
   "is_stationary", "outlier_pct", "model_class", "section", "value", "Hierarchy_Level",
   "Sort_Order", "run_id", "date_type", "file_path", "models_to_run", "underscore_count",
   "max_iterations", "run_complete", "has_best", "fold_count", "actual_ids", "missing_ids",
-  ".finnts_row", ".finnts_horizon", ".finnts_combo", ".finnts_date", "chunk"
+  ".finnts_row", ".finnts_horizon", ".finnts_combo", ".finnts_date", "chunk", "job", "best_rows",
+  "expected_key"
 ))
 
 #' @importFrom magrittr %>%

@@ -820,7 +820,7 @@ custom_author_preflight <- function(
   }
   historical <- input_data$Date >= hist_start_date & input_data$Date <= hist_end_date
   dates <- sort(unique(input_data$Date[historical]))
-  if (!length(dates) || dates[[1L]] != hist_start_date || tail(dates, 1L) != hist_end_date || !identical(as.numeric(dates), as.numeric(seq(hist_start_date,
+  if (!length(dates) || dates[[1L]] != hist_start_date || utils::tail(dates, 1L) != hist_end_date || !identical(as.numeric(dates), as.numeric(seq(hist_start_date,
     by = date_type, length.out = length(dates)
   )))) {
     custom_author_abort("input", "Historical dates must cover an uninterrupted cadence aligned with hist_start_date and hist_end_date.")

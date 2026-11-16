@@ -270,7 +270,7 @@ custom_summary_importance <- function(workflow) {
   horizon <- fit$context$forecast_horizon
   if (any(table(data$Combo) < horizon + definition$requirements$history$workflow_minimum_rows_per_series))
     return(unavailable("insufficient historical rows for a complete holdout and approved analysis history"))
-  assessment_rows <- unlist(lapply(split(seq_len(nrow(data)), data$Combo), tail, n = horizon), use.names = FALSE)
+  assessment_rows <- unlist(lapply(split(seq_len(nrow(data)), data$Combo), utils::tail, n = horizon), use.names = FALSE)
   analysis <- data[-assessment_rows, , drop = FALSE]
   assessment <- data[assessment_rows, , drop = FALSE]
   history_ok <- tryCatch({
