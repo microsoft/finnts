@@ -100,6 +100,22 @@ sc <- sparklyr::spark_connect(
 )
 ```
 
+Mount ADLS with `fileCacheTimeout = 0`. The default mount caches file listings and contents for 120 seconds, so outputs that one node just wrote can look missing or out of date on another. Finn waits and reads such outputs again, but a mount without the cache avoids that wait; in our Synapse tests it didn't slow runs down.
+
+```{r, message = FALSE, eval = FALSE}
+mssparkutils.fs.mount(
+  "abfss://<container>@<storage account>.dfs.core.windows.net",
+  "/finn",
+  list(linkedService = "<linked service>", fileCacheTimeout = 0)
+)
+
+run_info <- set_run_info(
+  project_name = "finn_fcst",
+  run_name = "spark_run_1",
+  path = mssparkutils.fs.getMountPath("/finn")
+)
+```
+
 Finn reconnects to Spark at the start of each Spark step, reusing the connection's method and configuration. By default sparklyr then copies the driver's R packages to the executors again before the step's first task. When every executor already has the same R package library as the driver, such as a Synapse Spark pool or a Databricks cluster with the packages installed on the pool or cluster, you can skip that copy by adding `config$sparklyr.apply.packages <- FALSE` to the connection config. Keep the default when executors may be missing packages, because their tasks would fail when loading Finn.
 
 Spark 3.5 works with sparklyr 1.8.6, the version installed on Synapse Spark 3.5 pools. Spark 4 needs sparklyr 1.9.1 or later.
