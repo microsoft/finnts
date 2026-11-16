@@ -488,6 +488,7 @@ par_start <- function(run_info,
 #' Restores the caller's future plan if `cl` was registered by `par_start()`,
 #' then stops the cluster and resets foreach to sequential. The shared pool of
 #' an open `with_inner_pool()` scope is kept for reuse; the scope stops it.
+#' Safe to call again for a pool it already ended.
 #'
 #' @param cl cluster object
 #'
@@ -502,6 +503,28 @@ par_end <- function(cl) {
     try(parallel::stopCluster(cl), silent = TRUE)
   }
   foreach::registerDoSEQ()
+}
+
+#' End a stage's pool when the stage exits, including after an error
+#'
+#' `par_start()` points the session's future plan at a new local pool, so a
+#' stage that stops before reaching its `par_end()` would leave the caller with
+#' Finn's plan and running workers. Call this in the stage function right after
+#' `par_start()`. It holds the pool object itself, because sequential foreach
+#' bodies run in the stage's frame and can overwrite its `par_info` or `cl`.
+#' The stage's own `par_end()` on success stays; ending a pool twice is
+#' harmless.
+#'
+#' @param cl Pool returned by `par_start()`, or `NULL` for sequential and Spark
+#'   runs.
+#' @param env Frame of the stage function; defaults to the caller's.
+#'
+#' @return `NULL`, invisibly. Side effect: adds a `par_end()` exit handler to
+#'   `env`.
+#' @noRd
+par_end_on_exit <- function(cl, env = parent.frame()) {
+  do.call(base::on.exit, list(bquote(par_end(.(cl))), TRUE, FALSE), envir = env)
+  invisible(NULL)
 }
 
 

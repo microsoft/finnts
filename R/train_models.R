@@ -390,6 +390,7 @@ train_models <- function(run_info,
     num_cores = num_cores,
     task_length = length(current_combo_list_final)
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages

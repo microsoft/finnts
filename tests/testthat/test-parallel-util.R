@@ -46,7 +46,7 @@ test_that("sequential par_start leaves the caller's future plan untouched", {
 
 test_that("tune runs on the local pool and par_end restores the caller's plan", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
 
@@ -72,7 +72,7 @@ test_that("tune runs on the local pool and par_end restores the caller's plan", 
 
 test_that("par_end restores a non-sequential caller plan", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   old_plan <- future::plan(future::multisession, workers = 2)
   withr::defer(future::plan(old_plan))
 
@@ -88,7 +88,7 @@ test_that("par_end restores a non-sequential caller plan", {
 
 test_that("cancel_parallel restores the caller's plan and stops the pool", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
 
@@ -103,7 +103,7 @@ test_that("cancel_parallel restores the caller's plan and stops the pool", {
 
 test_that("a pool abandoned by an error is never restored as the caller's plan", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
 
@@ -115,6 +115,29 @@ test_that("a pool abandoned by an error is never restored as the caller's plan",
 
   par_end(current$cl)
   expect_true(inherits(future::plan(), "sequential"))
+})
+
+test_that("a stage that fails after starting a local pool stops it and restores the caller's plan", {
+  skip_on_cran()
+  skip_if_fewer_workers(2)
+  old_plan <- future::plan(future::sequential)
+  withr::defer(future::plan(old_plan))
+
+  info <- standard_run(withr::local_tempdir())
+  suppressWarnings(prep_models(info, models_to_run = "meanf", run_ensemble_models = FALSE,
+    back_test_scenarios = 1, num_hyperparameters = 1))
+  pids <- integer()
+  # fail on the driver after the pool starts and before series are dispatched
+  testthat::local_mocked_bindings(custom_run_character_columns = function(...) {
+    pids <<- parallel_util_worker_pids(par_future_state$cluster)
+    stop("storage failure")
+  })
+
+  expect_error(train_models(info, parallel_processing = "local_machine", num_cores = 2,
+    run_local_models = TRUE, run_global_models = FALSE), "storage failure")
+  expect_length(pids, 2)
+  expect_true(inherits(future::plan(), "sequential"))
+  expect_false(any(parallel_util_running(pids)))
 })
 
 # Mock parallelly::availableCores() as a host that allows `limit` cores and
@@ -184,7 +207,7 @@ parallel_util_light_pools <- function(env = parent.frame()) {
 
 test_that("an inner pool scope reuses one pool and stops it when the scope ends", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   parallel_util_light_pools()
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
@@ -209,7 +232,7 @@ test_that("an inner pool scope reuses one pool and stops it when the scope ends"
 
 test_that("an inner pool scope replaces a dead or too small pool and nests", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 4, "Three local workers are required")
+  skip_if_fewer_workers(3)
   parallel_util_light_pools()
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
@@ -251,7 +274,7 @@ test_that("an inner pool scope replaces a dead or too small pool and nests", {
 
 test_that("an inner pool scope cleans up after an error and after cancel_parallel", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   parallel_util_light_pools()
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
@@ -279,7 +302,7 @@ test_that("an inner pool scope cleans up after an error and after cancel_paralle
 
 test_that("inner pools outside a scope are started and stopped per call", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   parallel_util_light_pools()
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))
@@ -437,7 +460,7 @@ test_that("reset_spark keeps the method, master and settings of other connection
 
 test_that("an inner pool scope applies its core budget to automatic requests only", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 4, "Three local workers are required")
+  skip_if_fewer_workers(3)
   parallel_util_light_pools()
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))

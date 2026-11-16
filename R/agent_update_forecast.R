@@ -3369,6 +3369,7 @@ fit_models <- function(run_info,
     ),
     inner = TRUE
   )
+  par_end_on_exit(par_info$cl)
 
   inner_cl <- par_info$cl
   inner_packages <- par_info$packages

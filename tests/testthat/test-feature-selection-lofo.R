@@ -43,7 +43,7 @@ test_that("LOFO feature importance scores every feature against the baseline", {
 test_that("installed LOFO workers match sequential feature importance", {
   skip_on_cran()
   skip_if_not_installed("xgboost")
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(
     file.exists(file.path(namespace_path, "Meta", "package.rds")),
@@ -62,7 +62,7 @@ test_that("installed LOFO workers match sequential feature importance", {
 test_that("train_models passes inner_parallel through to LOFO", {
   skip_on_cran()
   for (package in c("vip", "Boruta", "corrr", "ranger")) skip_if_not_installed(package)
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(
     file.exists(file.path(namespace_path, "Meta", "package.rds")),
@@ -102,7 +102,7 @@ test_that("train_models passes inner_parallel through to LOFO", {
 test_that("a Spark task shares one inner pool between LOFO and training", {
   skip_on_cran()
   for (package in c("vip", "Boruta", "corrr", "ranger")) skip_if_not_installed(package)
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(
     file.exists(file.path(namespace_path, "Meta", "package.rds")),

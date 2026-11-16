@@ -249,7 +249,8 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
       info
     },
     par_end = function(cl) {
-      if (inherits(cl, "cluster")) reports <<- c(reports, parallel::clusterCall(cl, collect_guard))
+      # stages end their pool explicitly and again on exit; collect from it once, while it runs
+      if (inherits(cl, "cluster") && par_pool_alive(cl)) reports <<- c(reports, parallel::clusterCall(cl, collect_guard))
       original_end(cl)
     },
     .package = "finnts"

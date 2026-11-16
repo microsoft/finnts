@@ -68,3 +68,11 @@ get_model_workflow <- function(trained_tbl, model_name) {
   }
   row$Model_Fit[[1]]
 }
+
+# Skip unless finnts can start `workers` local workers. par_start() sizes pools
+# with get_cores(), which honors container quotas, scheduler allocations and
+# check limits, so the host's logical CPU count can overstate the usable
+# workers. Input: required worker count. Skips, otherwise returns invisibly.
+skip_if_fewer_workers <- function(workers) {
+  testthat::skip_if(get_cores(NULL) < workers, paste(workers, "local workers are required"))
+}

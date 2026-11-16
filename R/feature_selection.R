@@ -477,6 +477,7 @@ lofo_fn <- function(run_info,
       length(),
     inner = TRUE
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages

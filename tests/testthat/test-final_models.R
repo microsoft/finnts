@@ -439,7 +439,7 @@ averaging_lose_chunk <- function(sentinel, workers_only, env = parent.frame()) {
 
 test_that("model averages lost on pool workers are recomputed in the main process", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two local workers are required")
+  skip_if_fewer_workers(2)
   testthat::local_mocked_bindings(par_attach_worker_packages = function(cl, packages) invisible(NULL))
   old_plan <- future::plan(future::sequential)
   withr::defer(future::plan(old_plan))

@@ -1342,6 +1342,7 @@ condense_data <- function(run_info,
     num_cores = min(length(names(list_of_batches)), num_cores),
     task_length = length(names(list_of_batches))
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages

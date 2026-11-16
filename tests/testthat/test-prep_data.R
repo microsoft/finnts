@@ -230,12 +230,14 @@ prep_data_orig_combo_info <- function(spark, data_output, box_cox, stationary, c
   structure(info, spark_columns = calls$columns)
 }
 
-test_that("Spark prep_data saves the same transformation table as the local path", {
-  settings <- list(
-    list(data_output = "csv", box_cox = TRUE, stationary = TRUE, clean_outliers = FALSE),
-    list(data_output = "parquet", box_cox = FALSE, stationary = TRUE, clean_outliers = TRUE)
-  )
-  for (setting in settings) {
+prep_data_spark_settings <- list(
+  csv = list(data_output = "csv", box_cox = TRUE, stationary = TRUE, clean_outliers = FALSE),
+  parquet = list(data_output = "parquet", box_cox = FALSE, stationary = TRUE, clean_outliers = TRUE)
+)
+for (format in names(prep_data_spark_settings)) {
+  test_that(paste("Spark prep_data saves the same", format, "transformation table as the local path"), {
+    if (format == "parquet") skip_if_not_installed("arrow")
+    setting <- prep_data_spark_settings[[format]]
     label <- paste(names(setting), unlist(setting), sep = "=", collapse = ", ")
     local <- do.call(prep_data_orig_combo_info, c(list(spark = FALSE), setting))
     spark <- do.call(prep_data_orig_combo_info, c(list(spark = TRUE), setting))
@@ -247,5 +249,5 @@ test_that("Spark prep_data saves the same transformation table as the local path
     numeric_cols <- setdiff(names(local), c("Combo", "Combo_Hash"))
     as_numbers <- function(x) dplyr::mutate(x, dplyr::across(dplyr::all_of(numeric_cols), as.numeric))
     expect_equal(as_numbers(structure(spark, spark_columns = NULL)), as_numbers(local), info = label)
-  }
-})
+  })
+}

@@ -199,12 +199,15 @@ with(common, {
   check("core detection falls back to all logical processors without parallelly",
     identical(finn_detect_cores(has_parallelly = FALSE), as.integer(parallel::detectCores(logical = TRUE))))
   if (requireNamespace("parallelly", quietly = TRUE) && isTRUE(parallel::detectCores() > 2)) {
-    # parallelly honors container, scheduler, and R CMD check core limits; this one is portable.
+    # parallelly honors container, scheduler, and R CMD check core limits. The
+    # check limit caps cores at two but never raises a smaller allocation, so
+    # compare with what parallelly itself reports under the same limit.
     old_limit <- Sys.getenv("_R_CHECK_LIMIT_CORES_", unset = NA)
     Sys.setenv("_R_CHECK_LIMIT_CORES_" = "TRUE")
     limited <- finn_system_resources()$cores
+    expected <- as.integer(parallelly::availableCores())
     if (is.na(old_limit)) Sys.unsetenv("_R_CHECK_LIMIT_CORES_") else Sys.setenv("_R_CHECK_LIMIT_CORES_" = old_limit)
-    check("core detection respects limits parallelly reports", identical(limited, 2L))
+    check("core detection respects limits parallelly reports", identical(limited, expected) && limited <= 2L)
   }
 
   # ---- Sharing the computer across projects -----------------------------------

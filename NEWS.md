@@ -26,7 +26,7 @@
   - For hierarchies, also checks every series and external regressor can be prepared, with `prep_data()` errors.
   - Describes how preparation treats the data: future rows, padded gaps, missing values, removed series, total rows and short histories.
 - `inner_parallel = TRUE` again tunes and refits models in parallel with tune 2.x, reusing the existing worker pool.
-  - The caller's `future` plan is restored when each step finishes or is cancelled.
+  - Local worker pools stop and the caller's `future` plan is restored when each step finishes, fails or is cancelled.
   - When series run one after another, worker processes now start once and are reused instead of restarting per series.
   - Pools are sized to the available work and respect `num_cores` and container CPU limits.
   - On Spark, each series starts one pool, shared by its feature selection, training and Agent iterations.

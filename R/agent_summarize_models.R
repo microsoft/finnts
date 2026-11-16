@@ -534,6 +534,7 @@ summarize_models <- function(agent_info,
     num_cores = num_cores,
     task_length = nrow(best_run_tbl)
   )
+  par_end_on_exit(par_info$cl)
 
   cl <- par_info$cl
   packages <- par_info$packages

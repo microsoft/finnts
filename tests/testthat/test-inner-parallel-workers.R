@@ -50,7 +50,7 @@ inner_parallel_forecasts <- function(path, inner_parallel) {
 
 test_that("installed inner-parallel workers match sequential forecasts", {
   skip_on_cran()
-  skip_if(parallel::detectCores() < 3, "Two inner workers are required")
+  skip_if_fewer_workers(2)
   namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
   skip_if_not(
     file.exists(file.path(namespace_path, "Meta", "package.rds")),

@@ -303,6 +303,7 @@ final_models <- function(run_info,
       num_cores = num_cores,
       task_length = length(current_combo_list_final)
     )
+    par_end_on_exit(par_info$cl)
 
     cl <- par_info$cl
     packages <- par_info$packages
@@ -1107,6 +1108,7 @@ average_model_forecasts <- function(predictions_tbl,
       task_length = ceiling(length(combos) / 200),
       inner = TRUE
     )
+    par_end_on_exit(par_info$cl)
     `%op%` <- par_info$foreach_operator
     chunk_size <- ceiling(length(combos) / max(1L, length(par_info$cl)))
     chunks <- unname(split(combos, ceiling(seq_along(combos) / chunk_size)))
