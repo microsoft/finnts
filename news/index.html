@@ -23,7 +23,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
       </span>
     </div>
 
@@ -100,15 +100,16 @@
     </div>
 
     <div class="section level2">
-<h2 class="page-header" data-toc-text="0.7.0.9021" id="finnts-0709021-development-version">finnts 0.7.0.9021 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709021-development-version"></a></h2>
+<h2 class="page-header" data-toc-text="0.7.0.9022" id="finnts-0709022-development-version">finnts 0.7.0.9022 (DEVELOPMENT VERSION)<a class="anchor" aria-label="anchor" href="#finnts-0709022-development-version"></a></h2>
 <div class="section level3">
-<h3 id="improvements-0-7-0-9021">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9021"></a></h3>
+<h3 id="improvements-0-7-0-9022">Improvements<a class="anchor" aria-label="anchor" href="#improvements-0-7-0-9022"></a></h3>
 <ul><li>
 <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code> creates reusable local/global forecasting models from business rules, validated against worked examples.
 <ul><li>Approval is manual in interactive sessions or automatic.</li>
 </ul></li>
 <li>Custom models train on a new <code>C1</code> recipe selected through <code>recipes_to_run</code>, alone or beside built-in models.
 <ul><li>Built-ins retain stationary, Box-Cox, outlier cleaning, multistep, feature selection, simple averages, ensembles, Spark and inner parallelism.</li>
+<li>Agent iterations and updates always run compatible custom models and show them beside the best model.</li>
 </ul></li>
 <li>Added <code><a href="../reference/chat_copilot.html">chat_copilot()</a></code> as an optional GitHub Copilot CLI alternative to ellmer for Agent workflows and <code><a href="../reference/create_custom_model.html">create_custom_model()</a></code>.
 <ul><li>Defaults to automatic model selection, with isolated conversations and tool-disabled requests.</li>
@@ -134,7 +135,7 @@
 </ul></li>
 </ul></div>
 <div class="section level3">
-<h3 id="bug-fixes-0-7-0-9021">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9021"></a></h3>
+<h3 id="bug-fixes-0-7-0-9022">Bug Fixes<a class="anchor" aria-label="anchor" href="#bug-fixes-0-7-0-9022"></a></h3>
 <ul><li>Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
 <ul><li>Missing values form the <code>"NA"</code> group already used in combo and hierarchy names, so series names and hashes are unchanged.</li>
 <li>A combo column with both missing values and literal <code>"NA"</code> text now errors instead of merging them.</li>

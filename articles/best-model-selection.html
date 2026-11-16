@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
       </span>
     </div>
 
@@ -1494,17 +1494,22 @@ unchanged cadence, regressors and enabled modes, and explicit
 <code>allow_iterate_forecast = FALSE</code>. The positive whole-number
 forecast horizon may change, subject to the approved rule’s history and
 driver requirements. Successful series replay their saved winners and
-component subsets. New series and recoverable built-in fitting or
-forecast-quality failures use Finn’s existing default-local fallback,
-with all compatible current-version custom models added first, plus
-enrolled foundation models whose credentials are available. The
-coordinator checks foundation availability once and passes it to workers
-for consistent default-model validation. Changed global cohorts are
-refitted using compatible current peers rather than reusing a pooled fit
-from different membership. Saved global winners are published only for
-surviving series; new peers still receive default-local forecasts.
-Required custom drivers remain mandatory. Custom rules are never retuned
-or regenerated; mixed retuning reuses their fixed results.</p>
+component subsets. Every enrolled custom model compatible with a series’
+winning local or global run is also refit and published beside that
+winner with <code>Best_Model = "No"</code> for comparison. It is never
+averaged into or substituted for the winner, does not gate its
+acceptance and is excluded from update accuracy metrics. New series and
+recoverable built-in fitting or forecast-quality failures use Finn’s
+existing default-local fallback, with all compatible current-version
+custom models added first, plus enrolled foundation models whose
+credentials are available. The coordinator checks foundation
+availability once and passes it to workers for consistent default-model
+validation. Changed global cohorts are refitted using compatible current
+peers rather than reusing a pooled fit from different membership. Saved
+global winners are published only for surviving series; new peers still
+receive default-local forecasts. Required custom drivers remain
+mandatory. Custom rules are never retuned or regenerated; mixed retuning
+reuses their fixed results.</p>
 <p>Storage/authentication failures, missing or malformed required
 artifacts, enrollment/identity mismatches and custom-source failures
 remain hard errors. Fallback cannot silently drop a custom model or

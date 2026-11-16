@@ -38,7 +38,7 @@
       </button>
       <span class="navbar-brand">
         <a class="navbar-link" href="../index.html">finnts</a>
-        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9021</span>
+        <span class="version label label-default" data-toggle="tooltip" data-placement="bottom" title="">0.7.0.9022</span>
       </span>
     </div>
 
@@ -280,7 +280,12 @@ replay consent.</p>
 <p>The update pins its completed predecessor, per-series selected
 components, current input signatures and controls before fitting. It
 replays those choices, including saved custom/built-in averages and
-different subsets from one shared global run. It never regenerates or
+different subsets from one shared global run. Every enrolled custom
+model that can run in a series’ winning local or global run is also
+refit and returned beside the winner with
+<code>Best_Model = "No"</code>, even when it did not win, so you can
+compare it with Finn’s selected model. These comparisons never change
+the winner or its accuracy metrics. The update never regenerates or
 tunes the custom rule. When selected built-ins need retuning, existing
 custom results are reused. A completed custom update can be the
 predecessor of another compatible update.</p>
