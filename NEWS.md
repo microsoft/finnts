@@ -33,54 +33,73 @@
   - On Spark, each series' inner workers share its executor node's cores; see the parallel processing vignette.
 - Simple model averages are computed up to 50 times faster, with identical results.
 - `prep_data()` on Spark no longer preps partial series to infer its output columns, skipping one Spark job.
-- On mounted Spark storage, Agent best-run logging, global-model finalization and final local forecast reads use up to 16 driver workers instead of one series at a time.
-  - In a 1,000-series test on Synapse these steps took 1-5 ms per series instead of 56-352 ms. Saved files are unchanged.
+- On mounted Spark storage, several Agent steps use up to 16 driver workers instead of one series at a time.
+  - These are best-run logging, global-model finalization and final local forecast reads.
+  - In a 1,000-series Synapse test these steps took 1-5 ms per series instead of 56-352 ms.
+  - Saved files are unchanged.
 - Small CSV files are read and written with fewer `vroom` threads, which is faster on many-core machines; files are unchanged.
   - Setting the `VROOM_THREADS` environment variable keeps `vroom`'s own thread choice.
-- Each Agent series, and the global search, lists its run logs once when it starts instead of again after every iteration.
+- Each Agent series, and the global search, lists its run logs once at the start instead of after every iteration.
   - Later iterations read their own run logs by exact path, so reasoning sees the same history, including rejected iterations.
   - Blob and OneDrive storage keep listing on every iteration.
-- `iterate_forecast()` gets its series names from the input file names and the saved EDA results when it starts, instead of reading every input file.
+- `iterate_forecast()` now gets series names from input file names and saved EDA results instead of reading every input file.
   - Only input files whose series EDA doesn't name are read. Series names that look numeric, such as `"001"`, stay text.
 - A restarted `iterate_forecast()` finishes a global iteration that was cut off after training, instead of training it again.
-  - The iteration keeps its run name and counts toward `max_iter`; it writes the run-log values and best-run records it would have written had it not been cut off.
-  - It is resumed only with the same `seed` and only if its settings are still valid; otherwise, or if finishing it fails, a new iteration starts as before. Agent runs with custom models start a new iteration, as before.
+  - The iteration keeps its run name and counts toward `max_iter`.
+  - It writes the run-log values and best-run records it would have written had it not been cut off.
+  - It is resumed only with the same `seed` and only if its settings are still valid.
+  - Otherwise, or if finishing it fails, a new iteration starts as before.
+  - Agent runs with custom models start a new iteration, as before.
 - Model training and `update_forecast()` refits are faster, with identical forecasts and saved models.
-  - Models without hyperparameters, such as `snaive` and `arima`, are checked on validation splits one at a time and stop at the first that fits, instead of being fitted on all of them.
-  - Multistep xgboost tuning and back-test fits skip xgboost's per-round training-set evaluation, and no longer warn when `min_n` exceeds the training rows.
+  - Models without hyperparameters, such as `snaive` and `arima`, are checked on validation splits one at a time.
+  - They stop at the first split that fits, instead of being fitted on all of them.
+  - Multistep xgboost tuning and back-test fits skip xgboost's per-round training-set evaluation.
+  - Multistep xgboost no longer warns when `min_n` exceeds the training rows.
   - Tuning and back-tests compute only RMSE; `yardstick`, already installed with tune, is now a direct dependency.
   - Stationary forecasts are undifferenced with vector operations, and global models split their forecasts by series once.
 - Agent iterations read less after each forecast run, with the same results.
-  - A local iteration no longer lists the whole `forecasts` folder to look for condensed files, which a one-series run never has.
+  - A local iteration no longer lists the `forecasts` folder for condensed files, which a one-series run never has.
   - A global iteration reads its forecasts for all series once instead of twice.
-- `summarize_models()` reads each global run's model file and summarizes each of its models once, instead of once per series that run won.
-  - For those series, chronos2 permutation importance in the model summaries is now one shared draw per global run instead of a separate draw per series; all other summary values are unchanged.
-- On Spark, the EDA, best-model selection and model summary stages run several series per task instead of one, saving the 10 to 14 s each new task spends loading packages.
-  - Tasks are capped at four per Spark slot (`spark.executor.cores` per executor times the executor count); without `spark.executor.cores`, as on Databricks, each series keeps its own task. Outputs are unchanged.
+- `summarize_models()` reads each global run's model file and summarizes its models once, not once per series that run won.
+  - For those series, chronos2 permutation importance is now one shared draw per global run, not one per series.
+  - All other summary values are unchanged.
+- On Spark, the EDA, best-model selection and model summary stages run several series per task instead of one.
+  - This saves the 10 to 14 s each new task spends loading packages.
+  - Tasks are capped at four per Spark slot (`spark.executor.cores` per executor times the executor count).
+  - Without `spark.executor.cores`, as on Databricks, each series keeps its own task. Outputs are unchanged.
 - Drops the `plyr` and `gtools` dependencies; average model IDs and combined CSV reads are unchanged.
 - Automatic MARS tuning skips exhaustive pruning, which can exceed 15 minutes per fit; MARS grids and forecasts change once.
   - Saved runs keep their chosen pruning when `update_forecast()` refits without retuning.
 
 ## Bug Fixes
 
-- `prep_data()` no longer stops with "need at least two non-NA values to interpolate" when `clean_outliers` and `clean_missing_values` are both `TRUE` and a series has fewer than two observed values.
-  - That series keeps its uncleaned target in `Target_Original`, as other columns with too few values already did; other series are unchanged.
+- `prep_data()` no longer stops with "need at least two non-NA values to interpolate" when cleaning sparse series.
+  - This happened when `clean_outliers` and `clean_missing_values` were both `TRUE` and a series had fewer than two observed values.
+  - That series keeps its uncleaned target in `Target_Original`, as other columns with too few values already did.
+  - Other series are unchanged.
 - Agent run metadata, from `get_best_agent_run()` and the saved `run_metadata`, now keeps every series' settings as written.
-  - Previously a setting used by only a few series, such as `lag_periods = "1---2"`, could be saved as `NA` or `TRUE` because column types were guessed from a sample of series.
+  - Previously a setting used by few series, such as `lag_periods = "1---2"`, could be saved as `NA` or `TRUE`.
+  - This happened because column types were guessed from a sample of series.
   - Runs without such values save identical files.
 - Final Agent forecasts and hierarchical reconciliation now use each series' iteration recorded in the saved `run_metadata`.
   - Previously a best-run record changed after the metadata was saved could make the forecast come from a different iteration.
   - These steps no longer list the project's logs folder.
 - On Spark, each Agent series task now receives only the settings it needs.
-  - Previously every task also carried the global search's results, EDA and best-run tables. On large runs this could reach gigabytes and fail with a `writeBin ... ignoring SIGPIPE` error.
-- When Spark re-runs a finished Agent series task, for example after losing cached results, the task now stops without repeating work.
-  - Previously a series could run more than `max_iter` iterations, and an update series repeated its reads and preparation checks before reusing its saved update.
-  - A series whose best model is a global model that missed the accuracy goal still counts its saved iterations, as before.
+  - Previously every task also carried the global search's results, EDA and best-run tables.
+  - On large runs this could reach gigabytes and fail with a `writeBin ... ignoring SIGPIPE` error.
+- When Spark re-runs a finished Agent series task, such as after losing cached results, it now stops without repeating work.
+  - Previously a series could run more than `max_iter` iterations.
+  - Previously an update series repeated its reads and preparation checks before reusing its saved update.
+  - A series whose best model is a global model missing the accuracy goal still counts its saved iterations, as before.
 - On Spark and `local_machine`, an Agent series whose R process crashes no longer stops `iterate_forecast()` or `update_forecast()` at once.
   - Examples are a segfault in a model's compiled code, or the operating system ending the process for lack of memory.
-  - Each series runs in its own process. A crash is reported with the series, its iteration and step, and the reason, and the series runs again after its completed iterations, up to 4 attempts.
-  - After 4 crashes the run stops with that message, except refits with previous settings, which fall back to default inputs like other failed series (custom-model runs stop).
-  - On `local_machine`, Agent series each start a fresh R process (a few seconds) instead of reusing a worker pool. Sequential runs and saved files are unchanged.
+  - Each series runs in its own process.
+  - A crash is reported with the series, its iteration and step, and the reason.
+  - The series then runs again after its completed iterations, up to 4 attempts.
+  - After 4 crashes the run stops with that message.
+  - Refits with previous settings instead fall back to default inputs like other failed series; custom-model runs stop.
+  - On `local_machine`, Agent series each start a fresh R process (a few seconds) instead of reusing a worker pool.
+  - Sequential runs and saved files are unchanged.
 - Models failing on every validation or back-test split now report the underlying error, not a missing `.pred` column.
 - Grouped hierarchical forecasts now reconcile when a combo variable has missing (blank) values.
   - Missing values form the `"NA"` group already used in combo and hierarchy names, so series names and hashes are unchanged.

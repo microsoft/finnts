@@ -162,6 +162,8 @@ test_that("custom candidates execute before built-ins regardless of alias orderi
   inputs <- validate_agent_custom_proposal(
     jsonlite::fromJSON(custom_agent_response("meanf")), info$custom_agent_contract, "local")
   child <- submit_fcst_run(info, inputs, hash_data("series1"), "custom-first", num_cores = 1)
-  expect_identical(observed, c("zz_rule", "builtin"))
+  # the custom refit runs first; meanf, which has no hyperparameters, then
+  # checks one validation split before its refit
+  expect_identical(observed, c("zz_rule", "builtin", "builtin"))
   expect_equal(unique(get_forecast_data(child)$Forecast), 100)
 })

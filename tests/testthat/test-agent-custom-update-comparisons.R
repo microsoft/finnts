@@ -47,25 +47,19 @@ test_that("interrupted completion logging keeps winner-only metrics beside compa
   local_custom_update_runtime()
   metrics <- c("combo", "best_run_name", "weighted_mape", "model_avg_wmape", "model_median_wmape", "model_std_wmape")
   best <- get_best_agent_run(current)
-  original_read <- finnts:::read_selection_file
-  calls <- 0L
-  # Hide the first current best-run record so the saved update rebuilds its
-  # completion metrics from outputs that also hold the custom comparison.
+  # Move the series' current best-run record aside, as an update interrupted
+  # before logging leaves it, so the saved update rebuilds its completion
+  # metrics from outputs that also hold the custom comparison.
+  parent <- current$project_info
+  parent$run_name <- current$run_id
+  record <- local_artifact_path(parent, "logs", "-agent_best_run", hash_data("first"), extension = "csv")
+  expect_true(file.rename(record, file.path(withr::local_tempdir(), basename(record))))
+  expect_false(file.exists(record))
   local_mocked_bindings(
-    load_update_runs = function(...) tibble::tibble(),
-    read_selection_file = function(run_info, folder, suffix = NULL,
-      combo = NULL, optional = FALSE, ...) {
-      if (identical(suffix, "-agent_best_run") &&
-        identical(run_info$run_name, current$run_id) && optional && calls == 0L) {
-        calls <<- calls + 1L
-        return(tibble::tibble())
-      }
-      original_read(run_info, folder, suffix, combo, optional, ...)
-    },
     fit_models = function(...) stop("Unexpected interrupted-tail refit"),
     summarize_models = function(...) invisible(NULL), .package = "finnts")
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)
-  expect_equal(calls, 1L)
+  expect_true(file.exists(record))
   rebuilt <- get_best_agent_run(current)
   expect_true(is.na(rebuilt$model_std_wmape))
   expect_equal(as.data.frame(rebuilt[, metrics]), as.data.frame(best[, metrics]))
