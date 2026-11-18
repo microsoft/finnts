@@ -723,3 +723,29 @@ test_that("summarize chronos-bolt-tiny resolves args and filters predictors to D
   expect_equal(nrow(nxreg_row), 1)
   expect_equal(unname(nxreg_row$value), "0")
 })
+
+test_that("installed local workers write the shared global summaries for every series", {
+  skip_if_fewer_workers(2)
+  namespace_path <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(
+    file.exists(file.path(namespace_path, "Meta", "package.rds")),
+    "Local PSOCK workers are verified from the installed namespace"
+  )
+  withr::local_envvar(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep))
+  agent_info <- artifact_test_agent(withr::local_tempdir())
+  best_runs <- artifact_test_global_models(agent_info)
+  local_mocked_bindings(
+    check_agent_info = function(...) invisible(NULL),
+    vip_available = function(...) TRUE,
+    get_best_agent_run = function(...) best_runs,
+    summarize_model_xgboost = function(...) tibble::tibble(section = "model_arg", name = "trees", value = "15"),
+    summarize_model_chronos2 = function(...) tibble::tibble(section = "importance", name = "x1", value = "0.25")
+  )
+
+  summarize_models(agent_info, parallel_processing = "local_machine", num_cores = 2)
+  result <- get_summarized_models(agent_info)
+
+  expect_setequal(unique(result$Combo), c("C", "D", "E"))
+  expect_setequal(as.character(result$value), c("15", "0.25"))
+  expect_identical(unique(result$Best_Model[result$Model_Name == "xgboost"]), "Yes")
+})

@@ -108,6 +108,10 @@ get_forecast_data <- function(run_info,
 
   condensed_files <- if (local_hierarchy || provider_hierarchy) {
     character()
+  } else if (single_combo && isTRUE(run_info$single_series_project)) {
+    # an Agent iteration's project holds one series, and only runs of more than
+    # 3,000 series are condensed, so don't list the whole forecasts folder
+    character()
   } else if (local_reads) {
     local_artifact_inventory(run_info, "forecasts", "*condensed")
   } else list_files(run_info$storage_object, fs::path(cond_path))
@@ -533,6 +537,10 @@ write_data <- function(x,
 
 #' Write object in specific file format
 #'
+#' One-row CSV files are written with `utils::write.csv()`; larger CSV files
+#' with vroom, using the thread count from `csv_write_threads()`. The written
+#' bytes don't depend on the thread count.
+#'
 #' @param x object to write to disk
 #' @param folder file path where outputs are written
 #' @param type type of data output written to disk
@@ -551,10 +559,63 @@ write_data_type <- function(x,
   switch(type,
     rds = saveRDS(x, path),
     parquet = arrow::write_parquet(x, path),
-    csv = vroom::vroom_write(x, path, delim = ",", progress = FALSE),
+    csv = vroom_with_threads(vroom::vroom_write, csv_write_threads(as.numeric(nrow(x)) * ncol(x)),
+      x, path, delim = ",", progress = FALSE),
     log = utils::write.csv(x, path, row.names = FALSE),
     qs2 = qs2::qs_save(x, path)
   )
+}
+
+#' vroom threads for reading CSV artifacts
+#'
+#' vroom uses one thread per core by default, and starting them costs more
+#' than reading a small file. On a 32-core Synapse node (2026-11-16), a
+#' one-row CSV read took 118 ms with the default and 6 ms with one thread (199
+#' vs 9 ms with 16 readers at once); 6.8 MB was fastest with 4 threads and
+#' 68 MB with the default. The parsed data is identical.
+#'
+#' @param sizes Sizes in bytes of the files read together; their mean decides.
+#'
+#' @return 1 below 1 MiB (or when sizes are unknown), 4 below 50 MiB, otherwise
+#'   `NULL` for vroom's default. Always `NULL` when the `VROOM_THREADS`
+#'   environment variable is set, so a user's setting wins.
+#' @noRd
+csv_read_threads <- function(sizes) {
+  if (nzchar(Sys.getenv("VROOM_THREADS"))) {
+    return(NULL)
+  }
+  size <- mean(as.numeric(sizes))
+  if (is.na(size) || size < 2^20) 1L else if (size < 50 * 2^20) 4L else NULL
+}
+
+#' vroom threads for writing CSV artifacts
+#'
+#' On the same Synapse node, writing 600 rows took 12 ms with one thread
+#' and 108 ms with the default; 60,000 and 600,000 rows were fastest with 4
+#' threads (38 and 174 ms vs 511 and 414 ms). The written bytes are identical.
+#'
+#' @param cells Rows times columns of the table to write.
+#'
+#' @return 1 below 100,000 cells, otherwise 4. `NULL` (vroom's default) when
+#'   `VROOM_THREADS` is set.
+#' @noRd
+csv_write_threads <- function(cells) {
+  if (nzchar(Sys.getenv("VROOM_THREADS"))) {
+    return(NULL)
+  }
+  if (cells < 1e5) 1L else 4L
+}
+
+#' Call a vroom function with an optional thread count
+#'
+#' @param fun `vroom::vroom` or `vroom::vroom_write`.
+#' @param threads Thread count, or `NULL` to leave vroom's default.
+#' @param ... Arguments for `fun`.
+#'
+#' @return The value of `fun`.
+#' @noRd
+vroom_with_threads <- function(fun, threads, ...) {
+  if (is.null(threads)) fun(...) else fun(..., num_threads = threads)
 }
 
 #' Write object final storage destination
@@ -723,8 +784,14 @@ download_file <- function(storage_object,
 #'   both readers, preserving opaque identifiers before type inference. Other
 #'   columns retain inferred types; absent named columns and non-CSV reads ignore
 #'   this argument. Callers remain responsible for required-column validation.
+#' @param guess_max Rows vroom samples to guess each other CSV column's type,
+#'   spread evenly across all files read together; 100 is vroom's default. Use
+#'   `Inf` when a rare value outside the sample, such as `"1---2"` in a mostly
+#'   empty settings column, would otherwise be parsed as the wrong type. The
+#'   per-file fallback reader always uses every row; non-CSV reads ignore this.
 #'
-#' @return file read into memory
+#' @return file read into memory. CSV files are read with the vroom thread count
+#'   from `csv_read_threads()`; the parsed data doesn't depend on it.
 #' @noRd
 read_file <- function(run_info,
                       path = NULL,
@@ -733,7 +800,8 @@ read_file <- function(run_info,
                       schema = NULL,
                       allow_missing = FALSE,
                       strict = FALSE,
-                      character_columns = NULL) {
+                      character_columns = NULL,
+                      guess_max = 100) {
   storage_object <- run_info$storage_object
 
   if (!is.null(path)) {
@@ -802,8 +870,9 @@ read_file <- function(run_info,
             NULL
           }
           withCallingHandlers(
-            vroom::vroom(files, show_col_types = FALSE, altrep = FALSE, delim = ",",
-              col_types = col_types),
+            vroom_with_threads(vroom::vroom, csv_read_threads(file.size(files)), files,
+              show_col_types = FALSE, altrep = FALSE, delim = ",",
+              col_types = col_types, guess_max = guess_max),
             vroom_mismatched_column_name = function(condition) {
               if (length(character_columns) > 0L) invokeRestart("muffleWarning")
             }
@@ -1020,19 +1089,20 @@ download_exact_artifact <- function(storage_object, path, destination, allow_mis
 #' @param allow_missing Whether confirmed missing optional artifacts are allowed.
 #' @param missing_value Value returned for confirmed missing optional artifacts.
 #' @param character_columns Optional CSV identifier columns parsed as text.
+#' @param guess_max CSV rows sampled for type guessing; see [read_file()].
 #' @return The requested output, or NULL when all optional paths are absent.
 #'   Remote paths are staged once per distinct path in temporary directories.
 #'   Provider and strict read errors propagate; stored artifacts are not changed.
 #' @noRd
 read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_missing = FALSE,
-                                 character_columns = NULL, missing_value = NULL) {
+                                 character_columns = NULL, missing_value = NULL, guess_max = 100) {
   if (is.null(run_info$storage_object)) {
     if (allow_missing) {
       file_list <- local_artifact_files(file_list, allow_missing = TRUE)
       if (!length(file_list)) return(missing_value)
     }
     return(read_file(run_info, file_list = file_list, return_type = return_type, strict = TRUE,
-      character_columns = character_columns))
+      character_columns = character_columns, guess_max = guess_max))
   }
   staged <- character()
   for (path in unique(as.character(file_list))) {
@@ -1047,7 +1117,7 @@ read_exact_artifact <- function(run_info, file_list, return_type = "df", allow_m
   local_info <- run_info
   local_info$storage_object <- NULL
   read_local_artifacts(local_info, staged, return_type = return_type,
-    character_columns = character_columns)
+    character_columns = character_columns, guess_max = guess_max)
 }
 
 local_artifact_inventory <- function(run_info, folder, suffix = "*",
@@ -1159,14 +1229,17 @@ local_artifact_files <- function(files, allow_missing = FALSE) {
 #' @param return_type Requested output format passed to read_file().
 #' @param allow_missing Whether absent optional paths may produce empty output.
 #' @param character_columns Optional CSV identifier columns parsed as text.
+#' @param guess_max CSV rows sampled for type guessing; see [read_file()].
 #' @return The requested output with strict read failures preserved. Path access
 #'   and regular-file checks run before parsing; no artifacts are written.
 #' @noRd
 read_local_artifacts <- function(run_info, file_list, return_type = "df",
-                                  allow_missing = FALSE, character_columns = NULL) {
+                                  allow_missing = FALSE, character_columns = NULL,
+                                  guess_max = 100) {
   files <- local_artifact_files(file_list, allow_missing = allow_missing)
   read_file(run_info, file_list = files, return_type = return_type,
-    allow_missing = allow_missing, strict = TRUE, character_columns = character_columns
+    allow_missing = allow_missing, strict = TRUE, character_columns = character_columns,
+    guess_max = guess_max
   )
 }
 

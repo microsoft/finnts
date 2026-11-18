@@ -57,23 +57,24 @@ test_that("installed mixed custom updates preserve choices on two real workers",
   expected <- get_agent_forecast(sequential)
   current <- do.call(set_agent_info, args)
   observations <- withr::local_tempdir()
-  original_parallel <- finnts:::par_start
-  local_mocked_bindings(par_start = function(...) {
-    parallel_info <- original_parallel(...)
-    if (!is.null(parallel_info$cl))
-      parallel::clusterCall(parallel_info$cl, function(expected_namespace, destination) {
-        stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
-        original <- finnts:::update_forecast_combo
-        testthat::local_mocked_bindings(update_forecast_combo = function(agent_info, ...) {
-          saveRDS(list(pid = Sys.getpid(), no_chat = is.null(agent_info$llm),
-            no_models = !any(vapply(agent_info, is.data.frame, logical(1))) &&
-              is.null(agent_info$custom_agent_contract) && is.null(agent_info$custom_agent_update)),
-            file.path(destination, paste0("update-", Sys.getpid(), ".rds")))
-          original(agent_info, ...)
-        }, .package = "finnts", .env = globalenv())
-        invisible(NULL)
-      }, namespace, observations)
-    parallel_info
+  original_start <- finnts:::start_series_process
+  local_mocked_bindings(start_series_process = function(task, item, context, packages) {
+    # run the series task in its own process under the observation mock
+    observed <- function(item, context) {
+      stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
+      original <- get("update_forecast_combo", envir = asNamespace("finnts"))
+      testthat::local_mocked_bindings(update_forecast_combo = function(agent_info, ...) {
+        saveRDS(list(pid = Sys.getpid(), no_chat = is.null(agent_info$llm),
+          no_models = !any(vapply(agent_info, is.data.frame, logical(1))) &&
+            is.null(agent_info$custom_agent_contract) && is.null(agent_info$custom_agent_update)),
+          file.path(destination, paste0("update-", Sys.getpid(), ".rds")))
+        original(agent_info, ...)
+      }, .package = "finnts")
+      get(task_name, envir = asNamespace("finnts"))(item, context)
+    }
+    environment(observed) <- list2env(list(task_name = task, expected_namespace = namespace,
+      destination = observations), parent = globalenv())
+    original_start(observed, item, context, packages)
   }, .package = "finnts")
   update_forecast(current, allow_iterate_forecast = FALSE, parallel_processing = "local_machine", num_cores = 2)
   actual <- get_agent_forecast(current)

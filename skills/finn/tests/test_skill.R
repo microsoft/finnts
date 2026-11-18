@@ -3093,6 +3093,11 @@ local({
       !any(grepl("repeat the same series", loaded$errors)))
 
   worker <- load_functions("run_worker.R", common)
+  check("worker: a finnts series crash killed for memory steps parallelism down, other crashes do not",
+    isTRUE(worker$worker_is_memory_error(paste0("Series 'West' crashed in iteration 2 (Training Individual Models): ",
+      "killed by the operating system, likely out of memory. Stopped after 4 attempts."))) &&
+      !isTRUE(worker$worker_is_memory_error(paste0("Series 'West' crashed: the R process stopped unexpectedly ",
+        "(exit status 3). Stopped after 4 attempts."))))
   worker$library <- function(...) invisible(NULL)
   seen <- new.env()
   worker$worker_standard <- function(paths, run_paths, state, data) {

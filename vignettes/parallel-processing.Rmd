@@ -41,6 +41,8 @@ driver-local executable path or login is not automatically available on a
 Spark cluster. See the [AI Agent vignette](ai-agent.html) for setup and data
 handling requirements.
 
+With `parallel_processing` set to "spark" or "local_machine", `iterate_forecast()` and `update_forecast()` run each time series in its own R process: a forked child of the Spark task's R worker, or a fresh R process on your machine. If that process crashes, for example from a segfault in a model's compiled code or because the operating system ended it for lack of memory, Finn reports the series, the iteration and step it was on, and the reason, then runs the series again after its completed iterations, up to four attempts in total. After the fourth crash the run stops with that message; a series refitted with its previous settings in `update_forecast()` is instead re-forecast with default inputs, like other failed series. On Spark, each series' messages are first written to a small file in the Spark task's working folder, then copied to the executor log; on Synapse, YARN removes that folder when the Spark application ends. On a local machine, starting a fresh R process for each time series takes a few seconds. Sequential runs (`parallel_processing = NULL`) run every series in your R session, where a crash ends the session; running the same call again resumes from the completed iterations.
+
 ## Within Azure using Spark
 
 To leverage the full power of Finn, running within Azure is the best choice in building production ready forecasts that can easily scale. The most efficient way to run Finn is to set `parallel_processing` to "spark" within `forecast_time_series()`. This will run each time series in parallel across a spark compute cluster.

@@ -583,3 +583,78 @@ test_that("multistep row mapping rejects non-finite predictions", {
     "non-finite predictions"
   )
 })
+
+# Direct xgboost multistep fit arguments: 36 monthly rows of a trend with three
+# outcome lags, horizon 3 and lag periods 1-3. Input: extra fit arguments.
+# Returns the argument list for xgboost_multistep_fit_impl().
+xgboost_multistep_args <- function(...) {
+  index <- seq_len(36)
+  outcome <- 100 + index + 5 * sin(index / 3) + (index %% 4)
+  c(list(
+    x = tibble::tibble(
+      Date = seq(as.Date("2020-01-01"), by = "month", length.out = 36),
+      Target_lag1 = outcome - 1,
+      Target_lag2 = outcome - 2 + (index %% 3),
+      Target_lag3 = outcome - 3
+    ),
+    y = outcome, lag_periods = c(1, 2, 3), forecast_horizon = 3,
+    objective = "reg:squarederror", nthread = 1, verbose = 0
+  ), list(...))
+}
+
+# Serialized boosters of one multistep xgboost fit, named by lag submodel, so
+# fits can be compared exactly without their R-side attributes.
+xgboost_multistep_boosters <- function(fit) {
+  lapply(fit$models, xgboost::xgb.save.raw)
+}
+
+test_that("discarded multistep xgboost fits match saved fits without evaluation logs", {
+  skip_if_not_installed("xgboost")
+  settings <- list(
+    list(max_depth = 3, nrounds = 8, eta = 0.2, colsample_bynode = 2,
+      min_child_weight = 2, subsample = 0.8, tree_method = "hist"),
+    list(max_depth = 4, nrounds = 5, colsample_bytree = 0.7, counts = FALSE,
+      min_child_weight = 1000, gamma = 0.1)
+  )
+  for (setting in settings) {
+    args <- do.call(xgboost_multistep_args, setting)
+    set.seed(11)
+    saved <- do.call(xgboost_multistep_fit_impl, args)
+    set.seed(11)
+    discarded <- do.call(xgboost_multistep_fit_impl, c(args, finnts_discarded_fit = TRUE))
+
+    expect_identical(xgboost_multistep_boosters(discarded), xgboost_multistep_boosters(saved))
+    expect_identical(discarded$data, saved$data)
+    expect_false(any(vapply(saved$models, function(model) is.null(attr(model, "evaluation_log")), logical(1))))
+    expect_true(all(vapply(discarded$models, function(model) is.null(attr(model, "evaluation_log")), logical(1))))
+  }
+})
+
+test_that("multistep xgboost clamps min_child_weight to the training rows without a warning", {
+  skip_if_not_installed("xgboost")
+  args <- xgboost_multistep_args(max_depth = 2, nrounds = 4)
+  expect_no_warning(clamped <- do.call(xgboost_multistep_fit_impl, c(args, min_child_weight = 1000)))
+  exact <- do.call(xgboost_multistep_fit_impl, c(args, min_child_weight = nrow(args$x)))
+  expect_identical(xgboost_multistep_boosters(clamped), xgboost_multistep_boosters(exact))
+})
+
+test_that("discarded multistep xgboost fits fall back when the trainer cannot be copied", {
+  skip_if_not_installed("xgboost")
+  repeated <- function(x) {
+    main_args <- list()
+    main_args$evals <- quote(x$watchlist)
+    main_args$evals <- quote(x$watchlist)
+    main_args
+  }
+  expect_null(build_xgboost_discarded_impl(xgb_train = function(x, y, ...) NULL))
+  expect_null(build_xgboost_discarded_impl(xgb_train = repeated))
+  expect_null(build_xgboost_discarded_impl(xgboost_impl = function(x, y, ...) NULL))
+  built <- build_xgboost_discarded_impl()
+  expect_true(is.function(built))
+  expect_identical(environment(built), asNamespace("modeltime"))
+
+  testthat::local_mocked_bindings(xgboost_discarded_impl = function() NULL)
+  args <- xgboost_multistep_args(max_depth = 2, nrounds = 4)
+  fallback <- do.call(xgboost_multistep_fit_impl, c(args, finnts_discarded_fit = TRUE))
+  expect_false(is.null(attr(fallback$models[[1]], "evaluation_log")))
+})

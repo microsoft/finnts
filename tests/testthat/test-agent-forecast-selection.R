@@ -843,10 +843,10 @@ test_that("Agent forecast loading does not require an ineligible average artifac
     dplyr::mutate(Combo = "series", Combo_ID = Combo, Hyperparameter_ID = 1,
       Best_Model = "Yes", Model_Name = "meanf", Model_Type = "local", Recipe_ID = "R1")
   reads <- character()
+  best_run <- data.frame(combo = "series", model_type = "local",
+    best_run_name = "selected", recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = TRUE)
   local_mocked_bindings(
     check_agent_info = function(...) NULL,
-    load_best_agent_run = function(...) data.frame(combo = "series", model_type = "local",
-      best_run_name = "selected", recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = TRUE),
     list_files = function(...) stop("must not list"),
     read_file = function(run_info, file_list = NULL, path = NULL, ...) {
       if (!is.null(path)) stop("expected exact file_list")
@@ -857,13 +857,13 @@ test_that("Agent forecast loading does not require an ineligible average artifac
   )
   agent <- list(run_id = "run", forecast_approach = "bottoms_up",
     project_info = list(project_name = "project", path = tempdir(), data_output = "csv", combo_variables = "Series"))
-  result <- load_agent_forecast(agent)
+  result <- load_agent_forecast(agent, best_run_tbl = best_run)
   expect_identical(unique(result$Model_ID), "only")
   expect_length(reads, 2L)
   expect_true(all(result$Best_Model == "Yes"))
 })
 
-test_that("Agent forecast re-reads on mounted storage list best runs once", {
+test_that("Agent forecast re-reads on mounted storage never list best runs", {
   fixture <- make_selection_case(futures = list(only = rep(100, 6)), errors = c(only = 0.03))
   rows <- dplyr::bind_rows(fixture$backtests, fixture$forecasts) %>%
     dplyr::mutate(Combo = "series", Combo_ID = Combo, Hyperparameter_ID = 1,
@@ -890,8 +890,8 @@ test_that("Agent forecast re-reads on mounted storage list best runs once", {
   )
   agent <- list(run_id = "run", forecast_approach = "bottoms_up",
     project_info = list(project_name = "project", path = tempdir(), data_output = "csv", combo_variables = "Series"))
-  expect_message(result <- load_agent_forecast(agent), "Re-reading final Agent forecasts")
-  expect_identical(listings, 1L)
+  expect_message(result <- load_agent_forecast(agent, best_run_tbl = best_run), "Re-reading final Agent forecasts")
+  expect_identical(listings, 0L)
   expect_identical(forecast_reads, 2L)
   expect_true(all(result$Best_Model == "Yes"))
 })
@@ -963,23 +963,57 @@ for (provider in c("blob_container", "ms_drive")) {
       artifact_test_path(source, "forecasts", "series", "-single_models")
     transport$files[[as.character(artifact_test_path(selected, "prep_models", suffix = "-train_test_split"))]] <-
       artifact_test_path(source, "prep_models", suffix = "-train_test_split")
-    local_mocked_bindings(
-      check_agent_info = function(...) NULL,
-      load_best_agent_run = function(...) data.frame(combo = "series", model_type = "local",
-        best_run_name = "selected", recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = TRUE)
-    )
+    best_run <- data.frame(combo = "series", model_type = "local",
+      best_run_name = "selected", recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = TRUE)
+    local_mocked_bindings(check_agent_info = function(...) NULL)
     agent <- list(run_id = "run", forecast_approach = "bottoms_up", project_info = project)
 
-    result <- load_agent_forecast(agent)
+    result <- load_agent_forecast(agent, best_run_tbl = best_run)
 
     expect_identical(unique(result$Model_ID), "only")
     expect_true(all(result$Best_Model == "Yes"))
     expect_length(transport$downloads, 2L)
     rows$Best_Model <- "No"
     write_data(rows, "series", source, "data", "forecasts", "-single_models")
-    expect_error(load_agent_forecast(agent), "missing a best model", fixed = TRUE)
+    expect_error(load_agent_forecast(agent, best_run_tbl = best_run), "missing a best model", fixed = TRUE)
   })
 }
+
+test_that("local Agent forecasts read on a series I/O pool match sequential reads", {
+  project <- artifact_test_run(withr::local_tempdir())
+  project$combo_variables <- "Series"
+  combos <- c("A", "B", "C")
+  best_run <- tibble::tibble(combo = combos, model_type = "local", best_run_name = paste0("run-", combos),
+    recipes_to_run = "R1", models_to_run = "meanf---snaive", average_models = c(TRUE, FALSE, TRUE))
+  for (index in seq_along(combos)) {
+    selected <- project
+    selected$project_name <- paste0(project$project_name, "_", hash_data(combos[[index]]))
+    selected$run_name <- best_run$best_run_name[[index]]
+    artifact_test_forecast(selected, combos[[index]], "single_models")
+    artifact_test_forecast(selected, combos[[index]], "average_models", model = "meanf_snaive", best = "No")
+    artifact_test_splits(selected)
+  }
+  agent <- list(run_id = "agent", forecast_approach = "bottoms_up", project_info = project)
+  local_mocked_bindings(check_agent_info = function(...) NULL)
+  sequential <- load_agent_forecast(agent, best_run_tbl = best_run)
+  dispatched <- 0L
+  local_mocked_bindings(
+    series_io_pool = function(run_info, n) "stub-pool",
+    series_io_close = function(cl) invisible(NULL),
+    series_io_apply = function(cl, items, task) {
+      dispatched <<- dispatched + length(items)
+      lapply(items, series_io_try, task = task)
+    }
+  )
+
+  pooled <- load_agent_forecast(agent, best_run_tbl = best_run)
+
+  expect_identical(pooled, sequential)
+  expect_identical(dispatched, 3L)
+  expect_setequal(unique(sequential$Combo), combos)
+  expect_setequal(sequential$Model_ID[sequential$Combo != "B"], c("meanf--local--R1", "meanf_snaive--local--R1"))
+  expect_identical(unique(sequential$Model_ID[sequential$Combo == "B"]), "meanf--local--R1")
+})
 
 test_that("an unpublished quality rejection is not treated as a completed forecast", {
   result <- rejected_agent_selection(c("first", "second"), "incomplete hierarchy")

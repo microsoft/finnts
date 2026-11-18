@@ -1579,6 +1579,9 @@ run_xreg_analysis <- function(input_data, combo_name, date_type, regressors, his
 
 #' Run all EDA functions per time series combo
 #'
+#' On Spark, each task runs several series one after another; see
+#' `spark_stage_batches()`. A failing series still stops the stage.
+#'
 #' @param agent_info agent information list
 #' @param parallel_processing whether to use parallel processing
 #' @param num_cores number of cores to use for parallel processing
@@ -1631,12 +1634,15 @@ run_all_eda_per_combo <- function(agent_info,
     return(cli::cli_progress_done())
   }
 
+  # several series per Spark task; see spark_stage_batches()
+  combo_batches <- spark_stage_batches(current_combo_list, parallel_processing)
+
   # parallel setup
   par_info <- par_start(
     run_info = project_info,
     parallel_processing = parallel_processing,
     num_cores = num_cores,
-    task_length = length(current_combo_list)
+    task_length = length(combo_batches)
   )
   par_end_on_exit(par_info$cl)
 
@@ -1654,9 +1660,9 @@ run_all_eda_per_combo <- function(agent_info,
   )
   freq_val <- freq_map[date_type] %||% 1
 
-  # submit tasks - one task per time series running all EDA functions
+  # submit tasks - each task runs all EDA functions for its series in turn
   foreach::foreach(
-    x = current_combo_list,
+    batch = combo_batches,
     .packages = packages,
     .errorhandling = "stop",
     .verbose = FALSE,
@@ -1665,6 +1671,7 @@ run_all_eda_per_combo <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
+      for (x in batch) {
       # read data once for all analyses
       input_data_full <- read_file(
         run_info = project_info,
@@ -1690,6 +1697,7 @@ run_all_eda_per_combo <- function(agent_info,
       run_outlier_analysis(input_data, combo_name, date_type, freq_val, project_info)
       run_seasonality_analysis(input_data, combo_name, date_type, freq_val, project_info)
       run_xreg_analysis(input_data_full, combo_name, date_type, regressors, hist_end_date, project_info)
+      }
     } %>%
     base::suppressWarnings() %>%
     base::suppressPackageStartupMessages()

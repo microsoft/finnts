@@ -362,3 +362,31 @@ test_that("global reasoning finalization performs at most one wildcard listing",
 
   expect_identical(list_calls, 1L)
 })
+
+test_that("global finalization on a series I/O pool rewrites the same best-run files", {
+  combos <- c("M750", "M1", "M42")
+  # Finalize three global records for `project_name` and return their lines.
+  run_finalize <- function(project_name) {
+    agent_info <- make_finalize_agent_info(project_name = project_name)
+    paths <- vapply(combos, function(combo_name) {
+      write_best_run_file(agent_info, combo_name, model_type = "global")
+    }, character(1))
+    expect_equal(finalize_run(agent_info = agent_info, combo = NULL), "Run finalized successfully.")
+    unname(lapply(paths, readLines))
+  }
+  sequential <- run_finalize("pool_sequential_proj")
+  dispatched <- 0L
+  local_mocked_bindings(
+    series_io_pool = function(run_info, n) "stub-pool",
+    series_io_close = function(cl) invisible(NULL),
+    series_io_apply = function(cl, items, task) {
+      dispatched <<- dispatched + length(items)
+      lapply(items, series_io_try, task = task)
+    }
+  )
+
+  pooled <- run_finalize("pool_parallel_proj")
+
+  expect_identical(pooled, sequential)
+  expect_identical(dispatched, length(combos))
+})

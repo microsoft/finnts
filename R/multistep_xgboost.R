@@ -441,8 +441,9 @@ xgboost_multistep_fit_impl <- function(x, y,
         )
     }
 
-    # fit model
-    fit_xgboost <- modeltime::xgboost_impl(
+    # fit model; parsnip caps min_child_weight at the row count, so capping it
+    # first gives the same booster without parsnip's per-fit warning
+    fit_xgboost <- xgboost_lag_fit(
       x = xreg_tbl_final,
       y = outcome,
       max_depth = max_depth,
@@ -450,7 +451,11 @@ xgboost_multistep_fit_impl <- function(x, y,
       eta = eta,
       colsample_bytree = colsample_bytree,
       colsample_bynode = colsample_bynode,
-      min_child_weight = min_child_weight,
+      min_child_weight = if (is.numeric(min_child_weight) && length(min_child_weight) == 1L) {
+        min(min_child_weight, nrow(xreg_tbl_final))
+      } else {
+        min_child_weight
+      },
       gamma = gamma,
       subsample = subsample,
       validation = validation,
@@ -501,6 +506,109 @@ xgboost_multistep_fit_impl <- function(x, y,
     extras = extras,
     desc   = desc
   )
+}
+
+#' Fit one lag's xgboost submodel
+#'
+#' Routes one lag fit of `xgboost_multistep_fit_impl()` to
+#' `modeltime::xgboost_impl()`, or to its evaluation-free copy when the fit is
+#' discarded after predicting. The flag arrives as a parsnip engine argument
+#' set by `discarded_fit_workflow()`; absorbing it here keeps it away from
+#' xgboost.
+#'
+#' @param ... Arguments for `modeltime::xgboost_impl()`.
+#' @param finnts_discarded_fit TRUE for `tune_grid()` and `fit_resamples()`
+#'   fits, whose boosters are dropped after predicting.
+#'
+#' @return An `xgb.Booster`. A discarded fit has the same trees and predictions
+#'   but no `evaluation_log` attribute; it uses modeltime's path when the
+#'   evaluation-free copy is unavailable.
+#' @noRd
+xgboost_lag_fit <- function(..., finnts_discarded_fit = FALSE) {
+  impl <- if (isTRUE(finnts_discarded_fit)) xgboost_discarded_impl()
+  if (is.null(impl)) impl <- modeltime::xgboost_impl
+  impl(...)
+}
+
+# Per-process cache for xgboost_discarded_impl(), filled on first use.
+xgboost_discarded_cache <- new.env(parent = emptyenv())
+
+#' Evaluation-free xgboost trainer for discarded fits
+#'
+#' Builds the trainer once per R process, including on parallel workers, and
+#' caches it, or the NULL fallback, in `xgboost_discarded_cache`.
+#'
+#' @return The function from `build_xgboost_discarded_impl()`, or NULL when it
+#'   cannot be built.
+#' @noRd
+xgboost_discarded_impl <- function() {
+  if (!exists("impl", envir = xgboost_discarded_cache, inherits = FALSE)) {
+    impl <- tryCatch(build_xgboost_discarded_impl(), error = function(error) NULL)
+    assign("impl", impl, envir = xgboost_discarded_cache)
+  }
+  get("impl", envir = xgboost_discarded_cache, inherits = FALSE)
+}
+
+#' Copy modeltime's xgboost bridge without per-round training evaluation
+#'
+#' `parsnip::xgb_train()` passes the training rows to `xgboost::xgb.train()` as
+#' an evaluation set, so every boosting round also scores them to fill the
+#' booster's `evaluation_log`. Tuning and back-test fits are dropped after
+#' predicting, so that work is wasted. This copies `xgb_train` with its
+#' evaluation sets set to an empty list, and `xgboost_impl` calling that copy.
+#' Everything else, including parameter handling, is the installed code, so
+#' trees and predictions match the normal path on any package version. The
+#' copies keep their package environments.
+#'
+#' @param xgboost_impl modeltime's xgboost bridge.
+#' @param xgb_train parsnip's xgboost trainer.
+#'
+#' @return A function with `xgboost_impl`'s interface, or NULL when either
+#'   body does not contain its expected expression exactly once.
+#' @noRd
+build_xgboost_discarded_impl <- function(xgboost_impl = modeltime::xgboost_impl,
+                                         xgb_train = parsnip::xgb_train) {
+  trainer <- replace_expression_once(
+    xgb_train,
+    quote(main_args$evals <- quote(x$watchlist)),
+    quote(main_args$evals <- list())
+  )
+  if (is.null(trainer)) {
+    return(NULL)
+  }
+  replace_expression_once(xgboost_impl, quote(parsnip::xgb_train), trainer)
+}
+
+#' Replace one expression in a copy of a function's body
+#'
+#' @param fn Function to copy.
+#' @param from Call to find. Matching is exact; only calls are searched.
+#' @param to Replacement expression or value.
+#'
+#' @return `fn` with its single match replaced, keeping its formals and
+#'   environment, or NULL when `from` occurs zero or several times.
+#' @noRd
+replace_expression_once <- function(fn, from, to) {
+  matches <- 0L
+  # recurse only into calls: empty arguments, as in x[, 1], are not values
+  replace <- function(expr) {
+    if (identical(expr, from)) {
+      matches <<- matches + 1L
+      return(to)
+    }
+    if (is.call(expr)) {
+      for (i in seq_along(expr)) {
+        if (is.call(expr[[i]])) expr[[i]] <- replace(expr[[i]])
+      }
+    }
+    expr
+  }
+  new_body <- replace(body(fn))
+  if (matches != 1L) {
+    return(NULL)
+  }
+  body(fn) <- new_body
+  fn
 }
 
 #' Print fitted custom xgboost model

@@ -374,8 +374,10 @@ artifact_completed_final_outputs <- function(run_info, combos = "A", date_type =
   predictions[, setdiff(names(predictions), "Run_Type")]
 }
 
-artifact_test_selected_models <- function(agent_info) {
-  best_runs <- tibble::tibble(combo = c("A", "B"), best_run_name = c("selected_A", "selected_B"),
+# Write one selected local run per series in `combos`: its trained meanf model
+# and its selected forecast. Returns the best-run rows.
+artifact_test_selected_models <- function(agent_info, combos = c("A", "B")) {
+  best_runs <- tibble::tibble(combo = combos, best_run_name = paste0("selected_", combos),
     model_type = "local"
   )
   for (index in seq_len(nrow(best_runs))) {
@@ -390,6 +392,29 @@ artifact_test_selected_models <- function(agent_info) {
     artifact_test_forecast(selected, combo)
   }
   best_runs
+}
+
+# Write one global Agent run whose global models won for `combos`: the run's
+# All-Data trained models (xgboost and chronos2) and each series' global
+# forecasts, with xgboost selected. Returns the best-run rows.
+artifact_test_global_models <- function(agent_info, combos = c("C", "D", "E"), run_name = "global_run") {
+  global <- agent_info$project_info
+  global$project_name <- paste0(global$project_name, "_", hash_data("all"))
+  global$run_name <- run_name
+  write_data(tibble::tibble(
+    Model_ID = c("xgboost--global--R1", "chronos2--global--R1"), Model_Name = c("xgboost", "chronos2"),
+    Model_Type = "global", Model_Fit = list(list(value = 1), list(value = 2))
+  ), "All-Data", global, "object", "models", "-single_models")
+  for (combo in combos) {
+    forecast <- dplyr::bind_rows(
+      artifact_test_forecast(global, combo, model = "xgboost", write_output = FALSE),
+      artifact_test_forecast(global, combo, model = "chronos2", best = "No", write_output = FALSE)
+    )
+    forecast$Model_ID <- sub("--local--", "--global--", forecast$Model_ID, fixed = TRUE)
+    forecast$Model_Type <- "global"
+    write_data(forecast, combo, global, "data", "forecasts", "-global_models")
+  }
+  tibble::tibble(combo = combos, best_run_name = run_name, model_type = "global")
 }
 
 local_artifact_summary_mocks <- function(best_runs, .env = parent.frame()) {

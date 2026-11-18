@@ -193,7 +193,7 @@ test_that("repair with one surviving model publishes and restarts without an ave
   agent$project_info$combo_variables <- "Series"
   local_mocked_bindings(
     check_agent_info = function(...) invisible(NULL),
-    load_best_agent_run = function(...) data.frame(combo = "Synthetic", model_type = "local",
+    load_final_agent_run_metadata = function(...) data.frame(combo = "Synthetic", model_type = "local",
       best_run_name = info$run_name, recipes_to_run = "R1", models_to_run = "meanf---snaive",
       average_models = TRUE)
   )
