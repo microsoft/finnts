@@ -236,6 +236,98 @@ test_that("legacy first-order original data retains its common initial value", {
   )
 })
 
+# Build one series' differenced recipe rows and three-split forecast rows in the
+# shapes train_models() passes to undifference_forecast(). Inputs: difference
+# order (0-2), recipe ("R1", or "R2" for horizon-stacked rows), whether the
+# Target_Original column is kept, whether two history targets are NA, and
+# whether forecast rows are shuffled across splits. Returns list(forecast,
+# recipe, diff); split 1 is the future forecast with NA targets.
+undifference_case <- function(difference_order, recipe = "R1", original = TRUE,
+                              mid_na = FALSE, shuffle = FALSE) {
+  index <- seq_len(36)
+  actuals <- 100 + 2 * index + 0.1 * index^2 + 8 * sin(index / 2)
+  cleaned <- actuals
+  cleaned[7] <- cleaned[7] + 30
+  fixture <- make_selection_history_recipe(actuals, cleaned, difference_order, recipe = recipe)
+  data <- fixture$data
+  if (!original) data$Target_Original <- NULL
+  dates <- sort(unique(data$Date))
+  if (mid_na) data$Target[data$Date %in% dates[c(10, 20)]] <- NA
+  split_rows <- function(id, positions, target) {
+    tibble::tibble(
+      Train_Test_ID = id, Forecast = 3 + positions / 10, Target = target,
+      Combo = "Synthetic", Date = dates[positions], Hyperparameter_ID = 1
+    )
+  }
+  forecast <- dplyr::bind_rows(
+    split_rows(1, 37:39, NA_real_),
+    split_rows(2, 34:36, c(1.5, -2, 4)),
+    split_rows(3, 31:33, c(0.5, 2, NA))
+  )
+  if (shuffle) forecast <- forecast[c(5, 1, 9, 2, 7, 4, 3, 8, 6), ]
+  list(forecast = forecast, recipe = data, diff = fixture$combo_info)
+}
+
+test_that("vectorized undifferencing matches the original loop without falling back", {
+  cases <- list()
+  for (order in 0:2) {
+    for (recipe in c("R1", "R2")) {
+      for (original in c(TRUE, FALSE)) {
+        for (mid_na in c(FALSE, TRUE)) {
+          for (shuffle in c(FALSE, TRUE)) {
+            case <- undifference_case(order, recipe, original, mid_na, shuffle)
+            case$label <- paste(order, recipe, original, mid_na, shuffle)
+            case$expected <- undifference_forecast_loop(case$forecast, case$recipe, case$diff)
+            cases[[length(cases) + 1]] <- case
+          }
+        }
+      }
+    }
+  }
+  testthat::local_mocked_bindings(undifference_forecast_loop = function(...) stop("loop fallback used"))
+  for (case in cases) {
+    expect_identical(
+      undifference_forecast(case$forecast, case$recipe, case$diff),
+      case$expected,
+      label = case$label
+    )
+  }
+})
+
+test_that("vectorized undifferencing hands unusual shapes to the original loop", {
+  loop <- undifference_forecast_loop
+  base <- undifference_case(2)
+  dates <- sort(unique(base$recipe$Date))
+  duplicated_dates <- base$forecast
+  duplicated_dates$Date[4:6] <- dates[c(35, 34, 35)]
+  short_history <- dplyr::bind_rows(base$forecast, tibble::tibble(
+    Train_Test_ID = 4, Forecast = c(1, 2), Target = c(1, 2), Combo = "Synthetic",
+    Date = dates[2:3], Hyperparameter_ID = 1
+  ))
+  integer_forecast <- base$forecast
+  integer_forecast$Forecast <- as.integer(round(integer_forecast$Forecast))
+  shapes <- list(
+    duplicated_dates = duplicated_dates,
+    short_history = short_history,
+    integer_forecast = integer_forecast,
+    data_frame = as.data.frame(base$forecast)
+  )
+  run <- function(fn, forecast) {
+    tryCatch(suppressWarnings(fn(forecast, base$recipe, base$diff)), error = conditionMessage)
+  }
+  expected <- lapply(shapes, run, fn = loop)
+  calls <- 0
+  testthat::local_mocked_bindings(undifference_forecast_loop = function(...) {
+    calls <<- calls + 1
+    loop(...)
+  })
+  for (shape in names(shapes)) {
+    calls <- 0
+    expect_identical(run(undifference_forecast, shapes[[shape]]), expected[[shape]], label = shape)
+    expect_equal(calls, 1, label = shape)
+  }
+})
+
 test_that("Box-Cox reconstruction preserves distinct original starting values", {
   for (recipe in c("R1", "R2")) {
     actuals <- as.numeric(101:136)

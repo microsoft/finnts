@@ -300,7 +300,7 @@ finish_update_node_parent <- function(parent) {
   metadata <- get_best_agent_run(agent)
   testthat::expect_setequal(metadata$combo, names(parent$levels))
   validate_global_iteration(metadata)
-  sources <- load_agent_forecast(agent)
+  sources <- load_agent_forecast(agent, best_run_tbl = metadata)
   testthat::expect_setequal(sources$Combo, names(parent$levels))
   reconcile_agent_forecast(agent, info)
   forecasts <- load_agent_forecast(agent, final_output = TRUE)

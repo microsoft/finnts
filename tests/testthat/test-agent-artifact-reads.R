@@ -157,6 +157,88 @@ for (provider in c("blob_container", "ms_drive")) {
   })
 }
 
+# Local best-run records for 150 series with the given `lag_periods` values
+# (character, NA for none) and fixed metric, flag and timestamp columns, in
+# series order S001 to S150. vroom guesses CSV column types from about 100
+# evenly spaced rows plus the last one, so at 150 rows it never samples rows
+# 100 to 149: settings placed there are the ones type guessing can miss.
+best_run_type_records <- function(lag_periods) {
+  tibble::tibble(
+    combo = sprintf("S%03d", seq_along(lag_periods)),
+    model_type = "local",
+    agent_run_id = "007",
+    best_run_name = sprintf("agent_007_%03d", seq_along(lag_periods)),
+    weighted_mape = seq_along(lag_periods) / 1000,
+    lag_periods = lag_periods,
+    created = "2026-11-12 04:23:41",
+    run_complete = TRUE,
+    max_iterations = 3
+  )
+}
+
+# Write each record as its own "-agent_best_run" log and return the exact
+# paths in record order, so a mocked listing controls the row order read.
+write_best_run_type_records <- function(agent_info, records) {
+  vapply(seq_len(nrow(records)), function(index) {
+    write_data(records[index, ], records$combo[[index]], agent_info$project_info, "log", "logs", "-agent_best_run")
+    as.character(artifact_test_path(agent_info$project_info, "logs", records$combo[[index]], "-agent_best_run", "csv"))
+  }, character(1))
+}
+
+test_that("best-run retrieval keeps settings values that sampled type guessing misses", {
+  agent <- artifact_test_agent(withr::local_tempdir())
+  lag_periods <- rep(NA_character_, 150)
+  lag_periods[c(120, 135)] <- c("1---2", "1")
+  records <- best_run_type_records(lag_periods)
+  paths <- write_best_run_type_records(agent, records)
+  local_mocked_bindings(list_files = function(storage_object, path, fail_on_error = FALSE) paths)
+
+  result <- load_best_agent_run(agent)
+
+  expect_identical(result$combo, records$combo)
+  expect_identical(result$lag_periods, lag_periods)
+  expect_equal(result$weighted_mape, records$weighted_mape)
+  expect_identical(result$run_complete, records$run_complete)
+})
+
+test_that("best-run retrieval keeps column types for ordinary records", {
+  agent <- artifact_test_agent(withr::local_tempdir())
+  lag_periods <- rep(c("3", NA_character_), 75)
+  records <- best_run_type_records(lag_periods)
+  paths <- write_best_run_type_records(agent, records)
+  local_mocked_bindings(list_files = function(storage_object, path, fail_on_error = FALSE) paths)
+
+  result <- load_best_agent_run(agent)
+
+  expect_identical(result$combo, records$combo)
+  expect_identical(result$agent_run_id, records$agent_run_id)
+  expect_identical(result$lag_periods, as.numeric(lag_periods))
+  expect_equal(result$weighted_mape, records$weighted_mape)
+  expect_identical(result$run_complete, records$run_complete)
+  expect_identical(result$max_iterations, records$max_iterations)
+  expect_s3_class(result$created, "POSIXct")
+})
+
+test_that("run metadata keeps settings values that sampled type guessing misses", {
+  agent <- c(
+    artifact_test_agent(withr::local_tempdir()),
+    list(agent_version = 1, llm = NULL, combo_cleanup_date = NULL, overwrite = FALSE)
+  )
+  lag_periods <- rep(NA_character_, 150)
+  lag_periods[c(120, 135)] <- c("1---2", "1")
+  metadata <- best_run_type_records(lag_periods) %>%
+    dplyr::select(-run_complete, -max_iterations)
+  writer_info <- agent$project_info
+  writer_info$run_name <- agent$run_id
+  write_data(metadata, NULL, writer_info, "data", "final_output", "-run_metadata")
+
+  result <- get_best_agent_run(agent)
+
+  expect_identical(result$combo, metadata$combo)
+  expect_identical(result$lag_periods, lag_periods)
+  expect_equal(result$weighted_mape, metadata$weighted_mape)
+})
+
 for (provider in c("blob_container", "ms_drive")) {
   test_that(paste("hierarchical Agent publication downloads only its exact best artifact on", provider), {
     source <- artifact_test_run(withr::local_tempdir(), "rds")
@@ -311,6 +393,70 @@ test_that("reconciliation reads the selected run split by exact path", {
   )
 })
 
+# Agent run with one local series, "A", saved at two iterations whose forecasts
+# differ (100 and 999). The saved run_metadata names "iteration-1" while the
+# live best-run record names "iteration-2", as after a stray worker's late write.
+# Returns the agent info for `forecast_approach`.
+write_late_best_run_fixture <- function(path, forecast_approach) {
+  agent <- artifact_test_agent(path)
+  agent$forecast_approach <- forecast_approach
+  agent$project_info$weekly_to_daily <- FALSE
+  info <- agent$project_info
+  info$run_name <- agent$run_id
+  for (run in c("iteration-1", "iteration-2")) {
+    selected <- agent$project_info
+    selected$project_name <- paste0(selected$project_name, "_", hash_data("A"))
+    selected$run_name <- run
+    rows <- artifact_test_forecast(selected, "A", write_output = FALSE)
+    rows$Forecast <- if (identical(run, "iteration-1")) 100 else 999
+    write_data(rows, "A", selected, "data", "forecasts", "-single_models")
+    artifact_test_splits(selected)
+  }
+  record <- function(run) {
+    tibble::tibble(
+      combo = "A", model_type = "local", agent_run_id = agent$run_id, best_run_name = run,
+      weighted_mape = 0.1, recipes_to_run = "R1", models_to_run = "meanf",
+      average_models = FALSE, negative_forecast = FALSE
+    )
+  }
+  write_data(record("iteration-1"), NULL, info, "data", "final_output", "-run_metadata")
+  write_data(dplyr::mutate(record("iteration-2"), max_iterations = 3, run_complete = TRUE),
+    "A", info, "log", "logs", "-agent_best_run"
+  )
+  agent
+}
+
+test_that("saved Agent forecasts use the run_metadata iteration, not a later best-run record", {
+  agent <- write_late_best_run_fixture(withr::local_tempdir(), "bottoms_up")
+  info <- agent$project_info
+  info$run_name <- agent$run_id
+  local_mocked_bindings(check_agent_info = function(...) NULL)
+  tracker <- local_artifact_spies(max_listings = 1L)
+
+  save_agent_forecast(agent)
+
+  saved <- read_exact_artifact(info, artifact_test_path(info, "final_output", suffix = "-forecast"))
+  expect_identical(unique(saved$Forecast), 100)
+  expect_equal(tracker$listings, 0L)
+})
+
+test_that("hierarchical reconciliation uses the run_metadata iteration, not a later best-run record", {
+  agent <- write_late_best_run_fixture(withr::local_tempdir(), "standard_hierarchy")
+  reconciled <- NULL
+  local_mocked_bindings(
+    check_agent_info = function(...) NULL,
+    reconcile = function(forecasts, ...) {
+      reconciled <<- forecasts
+      stop("reconciliation input captured", call. = FALSE)
+    }
+  )
+  tracker <- local_artifact_spies(max_listings = 1L)
+
+  expect_error(reconcile_agent_forecast(agent, agent$project_info), "reconciliation input captured")
+  expect_identical(unique(reconciled$Forecast), 100)
+  expect_equal(tracker$listings, 0L)
+})
+
 for (provider in c("blob_container", "ms_drive")) {
   test_that(paste("outer Agent reconciliation transfers the required exact split on", provider), {
     agent <- artifact_test_agent(withr::local_tempdir(), "rds")
@@ -437,6 +583,175 @@ test_that("model summary consolidation fails on a missing expected write", {
 
   expect_error(summarize_models(agent_info), "Missing required Finn artifact.*model_summary")
   expect_equal(tracker$listings, 0L)
+})
+
+test_that("global-winner series share one summary of each global model per run", {
+  agent_info <- artifact_test_agent(withr::local_tempdir())
+  best_runs <- dplyr::bind_rows(artifact_test_global_models(agent_info), artifact_test_selected_models(agent_info))
+  local_artifact_summary_mocks(best_runs)
+  calls <- c(xgboost = 0L, chronos2 = 0L)
+  model_reads <- 0L
+  frame <- NULL
+  original_read <- read_file
+  local_mocked_bindings(
+    summarize_model_xgboost = function(...) {
+      calls[["xgboost"]] <<- calls[["xgboost"]] + 1L
+      tibble::tibble(section = "model_arg", name = "trees", value = "15")
+    },
+    # chronos2 permutation importance is a random draw
+    summarize_model_chronos2 = function(...) {
+      calls[["chronos2"]] <<- calls[["chronos2"]] + 1L
+      tibble::tibble(section = "importance", name = "x1", value = format(stats::runif(1), digits = 15))
+    },
+    read_file = function(run_info, path = NULL, ...) {
+      if (!is.null(path) && grepl(paste0(hash_data("All-Data"), "-single_models."), path, fixed = TRUE)) {
+        model_reads <<- model_reads + 1L
+      }
+      original_read(run_info, path = path, ...)
+    },
+    par_start = function(...) {
+      frame <<- parent.frame()
+      list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`)
+    }
+  )
+  tracker <- local_artifact_spies()
+
+  summarize_models(agent_info)
+  result <- get_summarized_models(agent_info)
+
+  expect_identical(model_reads, 1L)
+  expect_identical(calls, c(xgboost = 1L, chronos2 = 1L))
+  global <- result[result$Model_Type == "global", ]
+  expect_setequal(unique(global$Combo), c("C", "D", "E"))
+  expect_identical(unique(global$Best_Model[global$Model_Name == "xgboost"]), "Yes")
+  expect_identical(unique(global$Best_Model[global$Model_Name == "chronos2"]), "No")
+  expect_length(unique(global$value[global$Model_Name == "chronos2"]), 1L)
+  expect_setequal(result$Combo[result$Model_Type == "local"], c("A", "B"))
+  expect_equal(tracker$listings, 0L)
+  # the trained global models are never bound in the frame a Spark loop ships to its tasks
+  expect_false(any(vapply(as.list(frame), function(value) {
+    is.data.frame(value) && "Model_Fit" %in% names(value)
+  }, logical(1))))
+})
+
+test_that("a global run without readable trained models still names its first series", {
+  agent_info <- artifact_test_agent(withr::local_tempdir())
+  best_runs <- artifact_test_global_models(agent_info, combos = c("C", "D"))
+  local_artifact_summary_mocks(best_runs)
+  original_read <- read_file
+  local_mocked_bindings(
+    settle_waits = function(path) c(0, 0),
+    read_file = function(run_info, path = NULL, ...) {
+      if (!is.null(path) && grepl(paste0(hash_data("All-Data"), "-single_models."), path, fixed = TRUE)) {
+        stop("cannot open file", call. = FALSE)
+      }
+      original_read(run_info, path = path, ...)
+    }
+  )
+
+  expect_error(suppressMessages(summarize_models(agent_info)), "No trained models found for combo: C.", fixed = TRUE)
+})
+
+# Write a completed global run: log, splits, each series' global forecasts,
+# the All-Data trained models and the prepared model objects. Returns run info.
+write_checked_global_run <- function(path) {
+  run_info <- artifact_test_run(path)
+  artifact_test_model_log(run_info)
+  artifact_test_splits(run_info)
+  for (combo in c("A", "B")) artifact_test_forecast(run_info, combo, suffix = "global_models")
+  artifact_test_forecast(run_info, "A")
+  for (combo in c("All-Data", "A")) {
+    write_data(tibble::tibble(Model_ID = "meanf--local--R1", Model_Fit = list(list(value = 1))),
+      combo, run_info, "object", "models", "-single_models")
+  }
+  for (suffix in c("-model_hyperparameters", "-model_workflows")) {
+    write_data(tibble::tibble(value = 1), NULL, run_info, "object", "prep_models", suffix)
+  }
+  run_info
+}
+
+test_that("a global run's output check returns the forecast its next step would read", {
+  run_info <- write_checked_global_run(withr::local_tempdir())
+  without_problems <- function(x) {
+    attr(x, "problems") <- NULL
+    x
+  }
+  expected <- without_problems(get_fcst_output(run_info))
+  reads <- 0L
+  original <- get_forecast_data
+  local_mocked_bindings(get_forecast_data = function(...) {
+    reads <<- reads + 1L
+    original(...)
+  })
+
+  checked <- validate_run_outputs(run_info, NULL, keep_forecast = TRUE)
+
+  expect_identical(without_problems(checked), expected)
+  expect_identical(reads, 1L)
+  expect_true(validate_run_outputs(run_info, NULL))
+  # local series keep their own check and hand nothing on
+  expect_true(validate_run_outputs(run_info, hash_data("A"), keep_forecast = TRUE))
+})
+
+test_that("a global iteration passes its checked forecast to the metrics step without reading it again", {
+  path <- withr::local_tempdir()
+  fs::dir_create(fs::path(path, "logs"))
+  chat <- new.env(parent = emptyenv())
+  chat$set_system_prompt <- function(prompt) chat
+  agent <- list(
+    project_info = list(project_name = "checked_forecast", path = path, storage_object = NULL, data_output = "csv",
+      object_output = "rds", combo_variables = "id", target_variable = "Target", date_type = "month"),
+    run_id = "agentrun", agent_version = 2, forecast_horizon = 6, external_regressors = NULL,
+    hist_end_date = as.Date("2026-06-01"), forecast_approach = "bottoms_up", negative_forecast = FALSE,
+    run_global_models = TRUE, run_local_models = FALSE, llm = chat
+  )
+  checked <- tibble::tibble(Combo = "A", Forecast = 1)
+  state <- new.env(parent = emptyenv())
+  state$outputs <- 0L
+  local_mocked_bindings(
+    new_llm_session = function(llm) llm,
+    iterate_forecast_system_prompt = function(...) "system prompt",
+    resolve_agent_global_forecast_approaches = function(...) "bottoms_up",
+    get_foundation_model_suffix = function() "",
+    wait_before_retry = function(...) invisible(NULL),
+    load_reason_history = function(...) new_reason_history("No Previous Runs"),
+    reason_inputs = function(...) list(models_to_run = "xgboost", reasoning = "next"),
+    submit_fcst_run = function(agent_info, inputs, combo, timestamp, ...) {
+      run_info <- list(project_name = "child", run_name = paste0("run_", timestamp), path = path, data_output = "csv")
+      if (state$with_checked) run_info$checked_forecast <- checked
+      run_info
+    },
+    get_fcst_output = function(run_info) {
+      state$outputs <- state$outputs + 1L
+      checked
+    },
+    calculate_fcst_metrics = function(run_info, fcst_tbl, ...) {
+      state$metric_input <- fcst_tbl
+      state$metric_fields <- names(run_info)
+      0.01
+    },
+    log_best_run = function(agent_info, run_info, ...) {
+      state$logged_fields <- names(run_info)
+      TRUE
+    },
+    finalize_run = function(...) invisible(NULL)
+  )
+  run_iteration <- function() {
+    testthat::capture_messages(fcst_agent_workflow(agent, NULL, 0.05, NULL, FALSE, 1, max_iter = 1,
+      previous_run_results = "No Previous Runs", run_log_paths = character()))
+  }
+
+  state$with_checked <- TRUE
+  run_iteration()
+  expect_identical(state$outputs, 0L)
+  expect_identical(state$metric_input, checked)
+  expect_false("checked_forecast" %in% c(state$metric_fields, state$logged_fields))
+
+  # without a checked forecast the output step reads it, as before
+  state$with_checked <- FALSE
+  run_iteration()
+  expect_identical(state$outputs, 1L)
+  expect_identical(state$metric_input, checked)
 })
 
 test_that("required local EDA propagates CSV failures after validation", {

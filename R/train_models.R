@@ -694,6 +694,8 @@ train_models <- function(run_info,
         # clamp negative Target values for models that require non-negative data
         prep_data <- clamp_negative_target(prep_data, model)
 
+        validation_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
+
         # tune hyperparameters
         set.seed(seed)
 
@@ -707,11 +709,19 @@ train_models <- function(run_info,
           }
           hyperparameter_id <- 1
           finalized_workflow <- empty_workflow_final
+        } else if (!has_tuning_parameters(empty_workflow_final) && nrow(validation_splits) > 0) {
+          check_untuned_validation(
+            discarded_fit_workflow(empty_workflow_final), prep_data, validation_splits, model,
+            c(inner_packages, "finnts")
+          )
+          hyperparameter_id <- 1
+          finalized_workflow <- empty_workflow_final
         } else {
         tune_results <- tune::tune_grid(
-          object = empty_workflow_final,
-          resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+          object = discarded_fit_workflow(empty_workflow_final),
+          resamples = create_splits(prep_data, validation_splits),
           grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
+          metrics = model_tuning_metrics(),
           control = tune::control_grid(
             allow_par = inner_parallel,
             pkgs = c(inner_packages, "finnts"),
@@ -750,9 +760,9 @@ train_models <- function(run_info,
               pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
             base::suppressMessages() %>% base::suppressWarnings()
         } else tune::fit_resamples(
-          object = finalized_workflow,
+          object = discarded_fit_workflow(finalized_workflow),
           resamples = create_splits(prep_data, model_train_test_tbl),
-          metrics = NULL,
+          metrics = model_tuning_metrics(),
           control = tune::control_resamples(
             allow_par = inner_parallel,
             save_pred = TRUE,
@@ -791,21 +801,7 @@ train_models <- function(run_info,
         # undo differencing transformation
         if (transformed_recipe & stationary & model %in% multivariate_model_list & !(model %in% foundation_model_list)) {
           if (combo_hash == "All-Data") {
-            final_fcst <- final_fcst %>%
-              dplyr::group_by(Combo) %>%
-              dplyr::group_split() %>%
-              purrr::map(function(x) {
-                combo <- unique(x$Combo)
-
-                final_fcst_return <- x %>%
-                  undifference_forecast(
-                    prep_data %>% dplyr::filter(Combo == combo),
-                    filtered_combo_info_tbl %>% dplyr::filter(Combo == combo)
-                  )
-
-                return(final_fcst_return)
-              }) %>%
-              dplyr::bind_rows()
+            final_fcst <- undifference_global_forecast(final_fcst, prep_data, filtered_combo_info_tbl)
           } else {
             final_fcst <- final_fcst %>%
               undifference_forecast(
@@ -1142,6 +1138,93 @@ select_best_rmse <- function(tune_results, model) {
   tune::select_best(tune_results, metric = "rmse")
 }
 
+#' Whether a workflow has hyperparameters to tune
+#'
+#' @param workflow Unfitted workflow.
+#'
+#' @return TRUE when its model or recipe marks any argument with `tune()`.
+#' @noRd
+has_tuning_parameters <- function(workflow) {
+  nrow(workflows::extract_parameter_set_dials(workflow)) > 0
+}
+
+#' Check that a model without hyperparameters fits a validation split
+#'
+#' Without tuning parameters, `tune_grid()` has one candidate: `select_best()`
+#' returns only `.config` and `finalize_workflow()` changes nothing, so its
+#' fits only decided whether the model failed on every validation split. This
+#' fits the splits one at a time, in order, and stops at the first that
+#' produces metrics. When none does, it raises the error `select_best_rmse()`
+#' raised for that `tune_grid()` result, naming the first split tune recorded
+#' an error for. Fitting consumes random numbers; callers reset the seed before
+#' the fits they keep.
+#'
+#' @param workflow Unfitted workflow without tuning parameters.
+#' @param prep_data Model input data for `create_splits()`.
+#' @param validation_splits Validation rows of the train/test split table; at
+#'   least one row.
+#' @param model Model name for the error.
+#' @param packages Packages tune loads for each fit.
+#'
+#' @return Invisibly, the position of the first split that fit.
+#' @noRd
+check_untuned_validation <- function(workflow, prep_data, validation_splits, model, packages) {
+  failed <- list()
+  for (i in seq_len(nrow(validation_splits))) {
+    result <- tune::fit_resamples(
+      object = workflow,
+      resamples = create_splits(prep_data, validation_splits[i, ]),
+      metrics = model_tuning_metrics(),
+      control = tune::control_resamples(allow_par = FALSE, pkgs = packages)
+    ) %>%
+      base::suppressMessages() %>%
+      base::suppressWarnings()
+    metrics <- result$.metrics[[1]]
+    if (!is.null(metrics) && nrow(metrics) > 0L) {
+      return(invisible(i))
+    }
+    failed[[length(failed) + 1L]] <- result
+  }
+  messages <- vapply(failed, resample_failure_message, character(1), model = model, splits = "validation")
+  recorded <- !endsWith(messages, ": tune recorded no error")
+  stop(c(messages[recorded], messages)[[1]], call. = FALSE)
+}
+
+#' Metrics computed when tuning and back-testing built-in models
+#'
+#' Hyperparameters are selected by RMSE and back-test refits are read only for
+#' their predictions, so tune's default set's R-squared is never used; it also
+#' warns for constant predictions.
+#'
+#' @return A yardstick metric set with RMSE only.
+#' @noRd
+model_tuning_metrics <- function() {
+  yardstick::metric_set(yardstick::rmse)
+}
+
+#' Mark a workflow's fits as discarded after predicting
+#'
+#' `tune_grid()` and `fit_resamples()` keep only metrics and predictions from
+#' their fits. For multistep xgboost, the engine argument
+#' `finnts_discarded_fit = TRUE` lets each lag submodel skip xgboost's
+#' per-round training-set evaluation; trees and predictions are unchanged
+#' (see `xgboost_lag_fit()`). Other models are returned as they are, because
+#' their engine arguments reach the engine's own fitting function. Never use
+#' the flagged workflow for a fit that is saved.
+#'
+#' @param workflow Unfitted workflow.
+#'
+#' @return The workflow, with the flag set when its model is
+#'   `xgboost_multistep()`.
+#' @noRd
+discarded_fit_workflow <- function(workflow) {
+  spec <- workflows::extract_spec_parsnip(workflow)
+  if (!inherits(spec, "xgboost_multistep")) {
+    return(workflow)
+  }
+  workflows::update_model(workflow, parsnip::set_args(spec, finnts_discarded_fit = TRUE))
+}
+
 #' Function to get train test splits in rsample format
 #'
 #' @param data data frame
@@ -1259,9 +1342,181 @@ get_original_diff_initial_values <- function(diff_tbl, initial_value) {
   )
 }
 
+#' Undifference one series' forecasts
+#'
+#' Vectorized form of `undifference_forecast_loop()` with the same contract and
+#' output: identical rows, row order, column order, types and values. Each
+#' split's history and forecast vectors are built with base R and passed
+#' through the shared `safe_diff_inv_vec()`, so NA handling, starting values and
+#' Target_Original logic match the loop. Shapes the vectors do not model are
+#' handed to the loop so results and errors stay identical: a non-tibble input,
+#' missing, non-Date or duplicated forecast dates in a split, fewer history rows
+#' than differences, non-double value columns, or an undifferenced vector whose
+#' length differs from its input.
+#'
+#' @param forecast_data One series' back-test and future predictions with
+#'   Train_Test_ID, Date, Target and Forecast plus pass-through columns.
+#' @param recipe_data That series' recipe rows; reads Date, Target and the
+#'   optional Target_Original and Horizon columns.
+#' @param diff_tbl That series' combo info row.
+#'
+#' @return `forecast_data` unchanged when the series was not differenced;
+#'   otherwise its rows grouped by split in first-appearance order, with the
+#'   pass-through columns followed by undifferenced Forecast and Target. Target
+#'   is NA for split 1, the future forecast.
+#' @noRd
 undifference_forecast <- function(forecast_data,
                                   recipe_data,
                                   diff_tbl) {
+  diff1 <- diff_tbl$Diff_Value1
+  diff2 <- diff_tbl$Diff_Value2
+
+  if (is.na(diff1) & is.na(diff2)) {
+    return(forecast_data)
+  }
+  if (is.na(diff1) || nrow(forecast_data) == 0) {
+    return(tibble::tibble())
+  }
+
+  fallback <- function() undifference_forecast_loop(forecast_data, recipe_data, diff_tbl)
+
+  if (!is.na(diff2)) {
+    num_diffs <- 2
+    initial_value <- c(diff1, diff2)
+  } else {
+    num_diffs <- 1
+    initial_value <- diff1
+  }
+
+  f_id <- forecast_data$Train_Test_ID
+  f_date <- forecast_data$Date
+  f_fc <- forecast_data$Forecast
+  f_tg <- forecast_data$Target
+  r_date <- recipe_data$Date
+  r_tg <- recipe_data$Target
+  has_orig <- "Target_Original" %in% names(recipe_data)
+  r_orig <- if (has_orig) recipe_data$Target_Original
+
+  if (!identical(class(forecast_data), c("tbl_df", "tbl", "data.frame")) ||
+    is.null(f_id) || is.null(f_date) || anyNA(f_id) || anyNA(f_date) ||
+    !inherits(f_date, "Date") || !inherits(r_date, "Date") ||
+    !is.double(f_fc) || !is.double(f_tg) || !is.double(r_tg) ||
+    (has_orig && !is.double(r_orig)) || nrow(recipe_data) == 0) {
+    return(fallback())
+  }
+
+  keep <- if ("Horizon" %in% colnames(recipe_data)) {
+    recipe_data$Horizon == min(unique(recipe_data$Horizon))
+  } else {
+    TRUE
+  }
+
+  # day numbers compare and sort like Date without S3 dispatch per split
+  f_day <- unclass(f_date)
+  r_day <- unclass(r_date)
+  uid <- unique(f_id)
+  idx_by_id <- split(seq_along(f_id), match(f_id, uid))
+  out_fc <- numeric(length(f_id))
+  out_tg <- numeric(length(f_id))
+
+  for (k in seq_along(uid)) {
+    p <- idx_by_id[[k]]
+    fd <- f_day[p]
+    fd_increasing <- !is.unsorted(fd, strictly = TRUE)
+    if (!fd_increasing && anyDuplicated(fd)) {
+      return(fallback())
+    }
+    s <- if (fd_increasing) fd[1] else min(fd)
+    h <- which(r_day < s & keep)
+    nh <- length(h)
+    if (nh == 0 || nh < num_diffs) {
+      return(fallback())
+    }
+    if (k == 1L) {
+      # the loop resolves starting values in its first split; erroring here keeps that point
+      target_initial_value <- initial_value
+      if (has_orig) {
+        target_initial_value <- get_original_diff_initial_values(diff_tbl, initial_value)
+      }
+      n_tiv <- length(target_initial_value)
+    }
+
+    # history in recipe order with the loop's leading NAs
+    h_fc <- r_tg[h]
+    h_fc[1] <- NA
+    if (!is.na(diff2)) {
+      h_fc[2] <- NA
+    }
+    if (has_orig) {
+      h_tg <- r_orig[h]
+      if (n_tiv > 0) h_tg[1] <- NA
+      if (n_tiv > 1) h_tg[2] <- NA
+    } else {
+      h_tg <- h_fc
+    }
+
+    # the loop's rbind() then stable arrange(Date); history dates all precede
+    # the split's forecast dates, so sorted input needs no reordering
+    c_day <- c(r_day[h], fd)
+    c_fc <- c(h_fc, f_fc[p])
+    c_tg <- c(h_tg, f_tg[p])
+    if (is.unsorted(c_day)) {
+      o <- order(c_day, method = "radix")
+      c_fc <- c_fc[o]
+      c_tg <- c_tg[o]
+      pos <- integer(length(o))
+      pos[o] <- seq_along(o)
+      fcst_pos <- pos[nh + seq_along(p)]
+    } else {
+      fcst_pos <- nh + seq_along(p)
+    }
+
+    fc_inv <- safe_diff_inv_vec(c_fc, num_diffs, initial_value)
+    if (length(fc_inv) != length(c_fc)) {
+      return(fallback())
+    }
+    out_fc[p] <- fc_inv[fcst_pos]
+
+    if (uid[k] == 1) {
+      if (n_tiv) {
+        # the loop undifferences split 1's history before joining none of it
+        tg_hist <- safe_diff_inv_vec(c_tg[seq_len(nh)], num_diffs, target_initial_value)
+        if (length(tg_hist) != nh) {
+          return(fallback())
+        }
+      }
+      out_tg[p] <- NA_real_
+    } else {
+      tg_inv <- if (n_tiv) safe_diff_inv_vec(c_tg, num_diffs, target_initial_value) else c_tg
+      if (length(tg_inv) != length(c_tg)) {
+        return(fallback())
+      }
+      out_tg[p] <- tg_inv[fcst_pos]
+    }
+  }
+
+  ord <- unlist(idx_by_id, use.names = FALSE)
+  keep_cols <- setdiff(names(forecast_data), c("Target", "Forecast"))
+  result <- forecast_data[ord, keep_cols]
+  result$Forecast <- out_fc[ord]
+  result$Target <- out_tg[ord]
+  result
+}
+
+#' Undifference one series' forecasts split by split
+#'
+#' Original implementation behind `undifference_forecast()`, which hands it the
+#' shapes its vectors do not model. For each split it filters the history
+#' before the split's first forecast date, joins it with the forecasts, and
+#' undifferences both columns with `safe_diff_inv_vec()`.
+#'
+#' @inheritParams undifference_forecast
+#'
+#' @return Same as `undifference_forecast()`.
+#' @noRd
+undifference_forecast_loop <- function(forecast_data,
+                                       recipe_data,
+                                       diff_tbl) {
   # check if data needs to be undifferenced
   diff1 <- diff_tbl$Diff_Value1
   diff2 <- diff_tbl$Diff_Value2
@@ -1372,6 +1627,57 @@ undifference_forecast <- function(forecast_data,
   }
 
   return(return_tbl)
+}
+
+#' Undifference a global model's forecasts series by series
+#'
+#' Splits the forecasts, the recipe columns undifferencing reads, and the combo
+#' info by Combo once, instead of filtering the full tables for every series.
+#' Series are processed in `dplyr::group_by()` key order and rows keep their
+#' input order within a series, matching the `group_split()` loop this
+#' replaces. Inputs that loop handles differently are passed to it unchanged:
+#' a non-tibble or grouped table, or a non-character or missing Combo.
+#'
+#' @param final_fcst All series' back-test and future predictions with Combo.
+#' @param prep_data All series' recipe rows with Combo.
+#' @param combo_info_tbl All series' combo info rows with Combo.
+#'
+#' @return Row-bound `undifference_forecast()` results, one block per series.
+#' @noRd
+undifference_global_forecast <- function(final_fcst, prep_data, combo_info_tbl) {
+  combo <- final_fcst$Combo
+  if (!identical(class(final_fcst), c("tbl_df", "tbl", "data.frame")) ||
+    !is.character(combo) || anyNA(combo)) {
+    return(
+      final_fcst %>%
+        dplyr::group_by(Combo) %>%
+        dplyr::group_split() %>%
+        purrr::map(function(x) {
+          combo <- unique(x$Combo)
+          undifference_forecast(
+            x,
+            prep_data %>% dplyr::filter(Combo == combo),
+            combo_info_tbl %>% dplyr::filter(Combo == combo)
+          )
+        }) %>%
+        dplyr::bind_rows()
+    )
+  }
+
+  combos <- dplyr::group_keys(dplyr::group_by(final_fcst["Combo"], Combo))$Combo
+  fcst_rows <- split(seq_along(combo), factor(combo, levels = combos))
+  recipe <- prep_data[intersect(c("Combo", "Date", "Target", "Target_Original", "Horizon"), names(prep_data))]
+  recipe_rows <- split(seq_len(nrow(recipe)), factor(recipe$Combo, levels = combos))
+  info_rows <- split(seq_len(nrow(combo_info_tbl)), factor(combo_info_tbl$Combo, levels = combos))
+
+  purrr::map(seq_along(combos), function(i) {
+    undifference_forecast(
+      final_fcst[fcst_rows[[i]], ],
+      recipe[recipe_rows[[i]], ],
+      combo_info_tbl[info_rows[[i]], ]
+    )
+  }) %>%
+    dplyr::bind_rows()
 }
 
 #' Function to undifference recipe data

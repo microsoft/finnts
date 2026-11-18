@@ -1274,7 +1274,11 @@ prepared_recipe_combos <- function(run_info, recipe_ids) {
 #' @param frequency_number number of time‑series frequency
 #' @param external_regressors character vector of external regressor names
 #'
-#' @return tbl with or without missing / outlier values replaced
+#' @return tbl with or without missing / outlier values replaced. With outlier
+#'   cleaning on, `Target_Original` keeps the uncleaned target, imputed when
+#'   missing values are cleaned and at least two targets are observed. Columns
+#'   with fewer than two observed values are returned unchanged, because
+#'   imputation and outlier cleaning need two points to interpolate.
 #' @noRd
 clean_outliers_missing_values <- function(df,
                                           clean_outliers,
@@ -1285,7 +1289,7 @@ clean_outliers_missing_values <- function(df,
   if (clean_outliers && "Target" %in% names(df)) {
     df <- df %>%
       dplyr::mutate(
-        Target_Original = if (clean_missing_values) {
+        Target_Original = if (clean_missing_values && sum(!is.na(Target)) >= 2) {
           timetk::ts_impute_vec(Target, period = frequency_number)
         } else {
           Target

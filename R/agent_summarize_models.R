@@ -445,6 +445,11 @@ summarize_model_custom <- function(workflow, model, mode, combo = NULL, cache = 
 #' and runtime, but never rewrites saved fits or forecasts. No-driver custom
 #' models retain metadata-only summaries. Global recipients share one in-memory
 #' diagnostic computation per fitted workflow within this invocation.
+#' Without custom models, each global run's model file is read and each of its
+#' models summarized once, before the per-series tasks, which copy those rows
+#' with their own Combo and Best_Model (`summarize_global_runs()`); a random
+#' summary such as chronos2 permutation importance is one draw per run. On
+#' Spark, each task summarizes several series in turn (`spark_stage_batches()`).
 #' Workers receive enrollment references, then read the authoritative bundle
 #' locally rather than serializing untrained objects in every dispatched task.
 #' Zero-row forecast files (for example, header-only average files written by
@@ -527,19 +532,13 @@ summarize_models <- function(agent_info,
     "timesfm" = summarize_model_timesfm
   )
 
-  # Setup parallel processing
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = nrow(best_run_tbl)
-  )
-  par_end_on_exit(par_info$cl)
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-  agent_info_lean <- agent_custom_worker_info(agent_info)
+  # Without custom models, each global run's models are summarized once here
+  # and shared by its series; only their Combo and Best_Model differ.
+  global_summaries <- if (is.null(custom_contract)) {
+    summarize_global_runs(project_info, best_run_tbl, model_summarize_map)
+  } else {
+    list()
+  }
 
   # One task owns all recipients of a global run, so its in-memory importance
   # cache avoids repeating diagnostic fits while preserving existing I/O paths.
@@ -549,9 +548,26 @@ summarize_models <- function(agent_info,
     split(best_run_tbl, ifelse(best_run_tbl$model_type == "global",
       paste0("global:", best_run_tbl$best_run_name), paste0("local:", best_run_tbl$combo)))
   }
+  # several jobs per Spark task; see spark_stage_batches()
+  summary_batches <- spark_stage_batches(summary_jobs, parallel_processing)
+
+  # Setup parallel processing
+  par_info <- par_start(
+    run_info = project_info,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    task_length = length(summary_batches)
+  )
+  par_end_on_exit(par_info$cl)
+
+  cl <- par_info$cl
+  packages <- par_info$packages
+  `%op%` <- par_info$foreach_operator
+  agent_info_lean <- agent_custom_worker_info(agent_info)
+
   # Step 2 & 3: Process each time series combo
   summary_tbl <- foreach::foreach(
-    job = summary_jobs,
+    batch = summary_batches,
     .combine = "rbind",
     .packages = packages,
     .errorhandling = "stop",
@@ -562,6 +578,7 @@ summarize_models <- function(agent_info,
     .noexport = NULL
   ) %op%
     {
+      dplyr::bind_rows(lapply(batch, function(job) {
       custom_summary_cache <- new.env(parent = emptyenv())
       dplyr::bind_rows(lapply(seq_len(nrow(job)), function(index) {
       x <- job[index, , drop = FALSE]
@@ -570,6 +587,7 @@ summarize_models <- function(agent_info,
       combo <- x$combo[1]
       model_type <- x$model_type[1]
       run_name <- x$best_run_name[1]
+      shared <- if (model_type == "global") global_summaries[[run_name]]
 
       if (model_type == "global") {
         hash_combo <- hash_data("all")
@@ -588,27 +606,11 @@ summarize_models <- function(agent_info,
         hash_combo
       )
 
-      # Get trained models for this time series. A finished Spark stage's files
-      # can be briefly invisible on a mount, so they're re-read there while
-      # missing; see read_settled()
-      trained_models_tbl <- read_settled(function() {
-        tryCatch(
-          {
-            read_file(project_info,
-              path = paste0(
-                "/models/", hash_data(project_name), "-", hash_data(run_name), "-",
-                model_hash_combo, "-single_models.", project_info$object_output
-              )
-            )
-          },
-          error = function(e) {
-            return(tibble::tibble())
-          }
-        )
-      }, function(models) nrow(models) > 0, project_info$path, paste("trained models for", combo))
-
-      if (nrow(trained_models_tbl) == 0) {
-        stop(paste0("No trained models found for combo: ", combo, "."), call. = FALSE)
+      # Get trained models for this time series, or the run's shared summary
+      trained_models_tbl <- if (!is.null(shared)) {
+        shared$models
+      } else {
+        read_summary_models(project_info, project_name, run_name, model_hash_combo, combo)
       }
 
       # Get forecast data to identify best models by reading specific files
@@ -755,7 +757,7 @@ summarize_models <- function(agent_info,
         model_name <- model_row$Model_Name
         model_id <- model_row$Model_ID
         model_type <- model_row$Model_Type
-        workflow <- model_row$Model_Fit[[1]]
+        workflow <- if (is.null(shared)) model_row$Model_Fit[[1]]
 
         # Check if this model is a best model
         if (best_models$Model_ID[[1]] == "Best-Model" && model_type == "global" && model_name == "xgboost") {
@@ -766,33 +768,13 @@ summarize_models <- function(agent_info,
           is_best <- ifelse(is_best, "Yes", "No") # Convert TRUE/FALSE to Yes/No
         }
 
-        # Get the appropriate summarize function
-        summarize_fn <- model_summarize_map[[model_name]]
-
-        if (!is.null(worker_contract) && model_name %in% names(worker_contract$envelopes)) {
+        if (!is.null(shared)) {
+          summary_df <- shared$summaries[[i]]
+        } else if (!is.null(worker_contract) && model_name %in% names(worker_contract$envelopes)) {
           summary_df <- summarize_model_custom(workflow, worker_contract$envelopes[[model_name]], model_type,
             combo = combo, cache = custom_summary_cache)
-        } else if (is.null(summarize_fn)) {
-          # Model type not supported for summarization
-          summary_df <- tibble::tibble(
-            section = "error",
-            name = "unsupported_model",
-            value = paste0("No summarize function for model: ", model_name)
-          )
         } else {
-          # Summarize the workflow
-          summary_df <- tryCatch(
-            {
-              summarize_fn(workflow)
-            },
-            error = function(e) {
-              tibble::tibble(
-                section = "error",
-                name = "summarization_error",
-                value = as.character(e$message)
-              )
-            }
-          )
+          summary_df <- summarize_model_row(model_name, workflow, model_summarize_map)
         }
 
         # Add metadata
@@ -823,6 +805,7 @@ summarize_models <- function(agent_info,
       )
 
       return(data.frame(Combo = combo))
+      }))
       }))
     } %>%
     base::suppressPackageStartupMessages()
@@ -883,6 +866,109 @@ summarize_models <- function(agent_info,
     folder = "final_output",
     suffix = "-model_summary"
   )
+}
+
+#' Read one run's trained models for model summaries
+#'
+#' A finished Spark stage's files can be briefly invisible on a mount, so they
+#' are re-read there while missing; see `read_settled()`.
+#'
+#' @param project_info Agent project info whose run name is the Agent run ID.
+#' @param project_name The run's project name (Agent project plus series or
+#'   "all" hash).
+#' @param run_name The run's name.
+#' @param model_hash_combo Hash in the model file name: the series hash, or the
+#'   hash of "All-Data" for a global run.
+#' @param combo Series named in the re-read message and the error.
+#'
+#' @return The run's trained models table, with at least one row.
+#' @noRd
+read_summary_models <- function(project_info, project_name, run_name, model_hash_combo, combo) {
+  trained_models_tbl <- read_settled(function() {
+    tryCatch(
+      {
+        read_file(project_info,
+          path = paste0(
+            "/models/", hash_data(project_name), "-", hash_data(run_name), "-",
+            model_hash_combo, "-single_models.", project_info$object_output
+          )
+        )
+      },
+      error = function(e) {
+        return(tibble::tibble())
+      }
+    )
+  }, function(models) nrow(models) > 0, project_info$path, paste("trained models for", combo))
+
+  if (nrow(trained_models_tbl) == 0) {
+    stop(paste0("No trained models found for combo: ", combo, "."), call. = FALSE)
+  }
+  trained_models_tbl
+}
+
+#' Summarize one built-in trained model
+#'
+#' @param model_name Model name, a key of `model_summarize_map`.
+#' @param workflow The fitted workflow.
+#' @param model_summarize_map Named list of summarize functions.
+#'
+#' @return The summary rows (section, name, value). A model without a summarize
+#'   function, or one whose summary fails, gets a single error row instead.
+#' @noRd
+summarize_model_row <- function(model_name, workflow, model_summarize_map) {
+  summarize_fn <- model_summarize_map[[model_name]]
+  if (is.null(summarize_fn)) {
+    return(tibble::tibble(
+      section = "error",
+      name = "unsupported_model",
+      value = paste0("No summarize function for model: ", model_name)
+    ))
+  }
+  tryCatch(
+    summarize_fn(workflow),
+    error = function(e) {
+      tibble::tibble(
+        section = "error",
+        name = "summarization_error",
+        value = as.character(e$message)
+      )
+    }
+  )
+}
+
+#' Summarize each global run's models once
+#'
+#' Every series a global run won shares that run's trained models, so their
+#' summaries differ only in Combo and Best_Model. Each run's model file is read
+#' once, and each model summarized once, instead of once per series. A random
+#' summary, such as chronos2 permutation importance, is therefore one draw per
+#' run. Only the small summaries are kept, so the models never reach the frame
+#' a Spark loop sends to its tasks.
+#'
+#' @param project_info Agent project info whose run name is the Agent run ID.
+#' @param best_run_tbl Best-run rows with combo, best_run_name and model_type.
+#' @param model_summarize_map Named list of summarize functions.
+#'
+#' @return A list named by global run: `models` (Model_ID, Model_Name and
+#'   Model_Type of the run's trained models, in file order) and `summaries`
+#'   (one summary table per model, in the same order). Empty without global
+#'   winners. Errors like a series task when a run's models can't be read,
+#'   naming the run's first series.
+#' @noRd
+summarize_global_runs <- function(project_info, best_run_tbl, model_summarize_map) {
+  global_rows <- best_run_tbl[best_run_tbl$model_type == "global", , drop = FALSE]
+  runs <- unique(global_rows$best_run_name)
+  project_name <- paste0(project_info$project_name, "_", hash_data("all"))
+  stats::setNames(lapply(runs, function(run_name) {
+    combo <- global_rows$combo[global_rows$best_run_name == run_name][[1]]
+    models <- read_summary_models(project_info, project_name, run_name, hash_data("All-Data"), combo)
+    list(
+      models = models[c("Model_ID", "Model_Name", "Model_Type")],
+      summaries = lapply(seq_len(nrow(models)), function(i) {
+        summarize_model_row(models$Model_Name[[i]], models$Model_Fit[[i]], model_summarize_map)
+      })
+    )
+  }), runs)
 }
 
 summarize_model_arima_fast <- function(fit, preds_tbl, outs_tbl, steps_tbl, digits) {

@@ -307,6 +307,79 @@ test_that("metadata skip avoids local optimization when all goals are met", {
   expect_length(state$local_calls, 0L)
 })
 
+test_that("local optimization routing selects only unfinished series", {
+  records <- data.frame(
+    combo = c("done", "goal", "global_above", "global_goal", "partial", "few_iterations"),
+    model_type = c("local", "local", "global", "global", "local", "local"),
+    weighted_mape = c(0.2, 0.01, 0.2, 0.01, 0.2, 0.2),
+    run_complete = c(TRUE, FALSE, TRUE, TRUE, FALSE, TRUE),
+    max_iterations = c(3, 0, 3, 3, 0, 2),
+    stringsAsFactors = FALSE
+  )
+
+  expect_identical(
+    agent_local_combos_to_run(records, c(records$combo, "missing"), 0.05, 3),
+    c("global_above", "partial", "few_iterations", "missing")
+  )
+  legacy <- records[, c("combo", "model_type", "weighted_mape")]
+  expect_identical(
+    agent_local_combos_to_run(legacy, legacy$combo, 0.05, 3),
+    c("done", "global_above", "partial", "few_iterations")
+  )
+  expect_identical(agent_local_combos_to_run(records[0, ], c("a", "b"), 0.05, 3), c("a", "b"))
+})
+
+test_that("local series dispatch never captures global results, EDA or best-run tables", {
+  state <- new.env(parent = emptyenv())
+  state$best_runs <- data.frame()
+  state$global_calls <- 0L
+  state$local_calls <- character(0)
+  mock_global_resume_dependencies(state)
+  payload <- stats::runif(3e5)
+  # records the frame doSpark would serialize into every task: its binding
+  # names and sizes, and whether any argument is still unevaluated (it would
+  # carry the caller's whole frame)
+  dispatch <- local({
+    store <- new.env(parent = emptyenv())
+    op <- utils::removeSource(function(obj, ex) {
+      frame <- parent.frame()
+      store$names <- ls(frame, all.names = TRUE)
+      store$lazy <- rlang::env_binding_are_lazy(frame)
+      store$bytes <- sum(vapply(store$names, function(name) length(serialize(get(name, frame), NULL)), numeric(1)))
+      lapply(eval(obj$args[[1]], obj$evalenv), function(combo) list(Combo = combo, warnings = list()))
+    })
+    list(store = store, op = op)
+  }, envir = new.env(parent = globalenv()))
+  testthat::local_mocked_bindings(
+    get_eda_data = function(...) data.frame(done = TRUE, payload = payload),
+    par_start = function(...) list(cl = NULL, packages = character(0), foreach_operator = dispatch$op),
+    fcst_agent_workflow = function(agent_info, combo, ...) {
+      if (!is.null(combo)) stop("local series must be dispatched", call. = FALSE)
+      state$global_run_log_paths <- list(...)$run_log_paths
+      state$best_runs <- data.frame(combo = c("A", "B"), model_type = "global", weighted_mape = 0.2,
+        run_complete = TRUE, max_iterations = 2, stringsAsFactors = FALSE)
+      list(results = list(get_fcst_output = data.frame(Forecast = payload)))
+    },
+    .package = "finnts"
+  )
+
+  iterate_forecast(
+    agent_info = make_global_resume_agent_info(),
+    max_iter = 2,
+    weighted_mape_goal = 0.05,
+    parallel_processing = NULL,
+    num_cores = 1
+  )
+
+  expect_false(any(c("fcst_results", "eda_results", "best_run_tbl", "agent_info", "combo_list", "previous_runs") %in%
+    dispatch$store$names))
+  expect_false(any(dispatch$store$lazy))
+  expect_lt(dispatch$store$bytes, length(serialize(payload, NULL)) / 10)
+  # the mocked listing returns "input.csv" for every pattern: the global
+  # workflow receives its one start listing of run logs
+  expect_identical(state$global_run_log_paths, "input.csv")
+})
+
 test_that("best-run read failures remain hard before global routing", {
   state <- new.env(parent = emptyenv())
   state$best_runs <- data.frame()

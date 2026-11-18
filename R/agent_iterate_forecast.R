@@ -291,19 +291,7 @@ iterate_forecast <- function(agent_info,
   }
 
   # get total number of time series
-  combo_list <- read_file(
-    run_info = project_info,
-    file_list = list_files(
-      project_info$storage_object,
-      paste0(
-        project_info$path, "/input_data/*", hash_data(project_info$project_name), "-",
-        hash_data(agent_info$run_id), "*.", project_info$data_output
-      )
-    ),
-    return_type = "df"
-  ) %>%
-    dplyr::pull(Combo) %>%
-    unique()
+  combo_list <- agent_input_series(agent_info, eda_results)
 
   agent_info$selection_combos <- combo_list
   if (!is.null(agent_info$custom_agent_contract) && !run_local_models &&
@@ -327,10 +315,13 @@ iterate_forecast <- function(agent_info,
     } else {
       message("[agent] Starting Global Model Iteration Workflow")
 
-      # adjust max iterations based on previous runs
+      # adjust max iterations based on previous runs; the workflow lists its
+      # run logs once here and adds each new iteration's log itself
+      run_log_paths <- agent_run_log_paths(agent_info, combo = NULL)
       previous_runs <- load_run_results(
         agent_info = agent_info,
-        combo = NULL
+        combo = NULL,
+        run_log_paths = run_log_paths
       )
 
       if (!tibble::is_tibble(previous_runs)) {
@@ -345,10 +336,14 @@ iterate_forecast <- function(agent_info,
 
       if (max_iter_adj > 0) {
         if (max_iter_adj < max_iter) {
-          cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
+          cli::cli_alert_info(
+            "Adjusting max iterations down due to {prev_run_count} previously completed iteration{?s}."
+          )
         }
 
-        # run the global model optimization
+        # run the global model optimization; a global iteration cut off after
+        # training is finished first instead of being redone
+        resume_run <- find_resumable_global_run(agent_info, run_log_paths, previous_runs, seed)
         fcst_results <- fcst_agent_workflow(
           agent_info = agent_info,
           combo = NULL, # NULL = global models
@@ -360,7 +355,9 @@ iterate_forecast <- function(agent_info,
           seed = seed,
           previous_run_results = previous_runs,
           fallback_available = run_local_models,
-          eda_results = eda_results
+          eda_results = eda_results,
+          run_log_paths = run_log_paths,
+          resume_run = resume_run
         )
         global_models_ran <- TRUE
       } else {
@@ -378,47 +375,7 @@ iterate_forecast <- function(agent_info,
     best_run_tbl <- load_best_agent_run(agent_info = agent_info)
   }
 
-  if (nrow(best_run_tbl) > 0) {
-    # check if max_iter OR run_complete columns exist (for backward compatibility)
-    if (!"run_complete" %in% colnames(best_run_tbl) | !"max_iterations" %in% colnames(best_run_tbl)) {
-      best_run_tbl <- best_run_tbl %>%
-        dplyr::mutate(
-          run_complete = FALSE,
-          max_iterations = 0
-        )
-    }
-
-    # set run_complete to FALSE for global models that did not meet mape goal,
-    # which will allow local models to run if needed
-    best_run_tbl <- best_run_tbl %>%
-      dplyr::mutate(
-        run_complete = ifelse(model_type == "global" & weighted_mape > weighted_mape_goal, FALSE, run_complete)
-      )
-
-    # add in missing combos that have not been run yet (no agent best run file)
-    missing_combos <- setdiff(combo_list, best_run_tbl$combo)
-
-    if (length(missing_combos) > 0) {
-      missing_tbl <- tibble::tibble(
-        combo = missing_combos,
-        weighted_mape = Inf,
-        run_complete = FALSE,
-        max_iterations = 0
-      )
-
-      best_run_tbl <- best_run_tbl %>%
-        dplyr::bind_rows(missing_tbl)
-    }
-
-    # filter combos that need local model optimization
-    local_combo_list <- best_run_tbl %>%
-      dplyr::filter(!is.finite(weighted_mape) | weighted_mape > weighted_mape_goal) %>%
-      dplyr::filter(run_complete == FALSE | max_iterations < max_iter) %>%
-      dplyr::pull(combo) %>%
-      unique()
-  } else {
-    local_combo_list <- combo_list
-  }
+  local_combo_list <- agent_local_combos_to_run(best_run_tbl, combo_list, weighted_mape_goal, max_iter)
 
   # optimize local models
   if (length(local_combo_list) == 0) {
@@ -428,98 +385,19 @@ iterate_forecast <- function(agent_info,
   } else {
     message("[agent] Starting Local Model Iteration Workflow")
 
-    # parallel setup
-    par_info <- par_start(
-      run_info            = project_info,
-      parallel_processing = parallel_processing,
-      num_cores           = num_cores,
-      task_length         = length(local_combo_list)
-    )
-    par_end_on_exit(par_info$cl)
-
-    cl <- par_info$cl
-    packages <- par_info$packages
-    `%op%` <- par_info$foreach_operator
-    agent_info_lean <- agent_custom_worker_info(agent_info, keep_llm = TRUE)
     # series optimized one after another in this process share one inner pool
     local_inner_pool(inner_parallel && is.null(parallel_processing))
-    # each Spark task's share of its node for automatic inner pools (D13)
-    task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
-    # foreach over each combo file
-    local_models <- foreach::foreach(
-      x               = local_combo_list,
-      .packages       = packages,
-      .errorhandling  = "stop",
-      .inorder        = FALSE,
-      .multicombine   = TRUE
-    ) %op%
-      {
-        message("[agent] Running local model optimization for combo: ", x)
-        fallback_warnings <- list()
-
-        # ensure functions are available in the local environment
-        if (inner_parallel) {
-          run_graph <- run_graph
-          execute_node <- execute_node
-          reason_inputs <- reason_inputs
-          submit_fcst_run <- submit_fcst_run
-          get_fcst_output <- get_fcst_output
-          calculate_fcst_metrics <- calculate_fcst_metrics
-          log_best_run <- log_best_run
-          load_eda_results <- load_eda_results
-          make_pipe_table <- make_pipe_table
-          load_run_results <- load_run_results
-          agent_info_lean <- agent_info_lean
-          safe_dir_ls <- safe_dir_ls
-          list_files <- list_files
-          task_cores <- task_cores
-        }
-
-        # adjust max iterations based on previous runs
-        previous_runs <- load_run_results(
-          agent_info = agent_info_lean,
-          combo = hash_data(x)
-        )
-
-        if (!tibble::is_tibble(previous_runs)) {
-          max_iter_adj <- max_iter
-        } else {
-          prev_run_count <- previous_runs %>%
-            dplyr::filter(agent_version == agent_info_lean$agent_version) %>%
-            nrow()
-
-          max_iter_adj <- max_iter - prev_run_count
-        }
-
-        if (max_iter_adj > 0) {
-          if (max_iter_adj < max_iter) {
-            cli::cli_alert_info("Adjusting max iterations down due to previously completed iterations.")
-          }
-
-          # run the local model workflow; its iterations and stages share one
-          # inner pool in this worker process
-          fcst_results <- capture_forecast_warnings(with_inner_pool(fcst_agent_workflow(
-            agent_info = agent_info_lean,
-            combo = hash_data(x),
-            weighted_mape_goal = weighted_mape_goal,
-            parallel_processing = NULL,
-            inner_parallel = inner_parallel,
-            num_cores = num_cores,
-            max_iter = max_iter_adj,
-            seed = seed,
-            previous_run_results = previous_runs,
-            fallback_available = FALSE
-          ), active = inner_parallel, cores = task_cores))
-          fallback_warnings <- fcst_results$warnings
-        } else {
-          cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
-        }
-
-        return(list(Combo = x, warnings = fallback_warnings))
-      } %>% base::suppressPackageStartupMessages()
-
-    par_end(cl)
+    local_models <- run_agent_local_series(
+      agent_info_lean = agent_custom_worker_info(agent_info, keep_llm = TRUE),
+      local_combo_list = local_combo_list,
+      max_iter = max_iter,
+      weighted_mape_goal = weighted_mape_goal,
+      parallel_processing = parallel_processing,
+      inner_parallel = inner_parallel,
+      num_cores = num_cores,
+      seed = seed
+    )
     for (result in local_models) {
       for (condition in result$warnings) warning(condition)
     }
@@ -564,6 +442,350 @@ iterate_forecast <- function(agent_info,
 
   # finish up
   message("[agent] Forecast Iteration Process Complete")
+}
+
+#' Series names of an Agent run, from its input listing and EDA names
+#'
+#' [iterate_forecast()] needs every series' raw name when it starts. Reading
+#' all input files for their `Combo` values costs one read per series (about
+#' 5 to 10 minutes per start at 8,205 series on mounted Spark storage), but
+#' each input file name already carries its series' hash, and the consolidated
+#' EDA results loaded just before hold the raw names. A name from EDA is used
+#' only when its hash equals a listed file's hash, so it is the file's exact
+#' series; the other files (EDA that skipped a series, hierarchy-level input,
+#' or unexpected names) are read in one call, as before. Names are text, as
+#' each series' own input read keeps them.
+#'
+#' @param agent_info Agent info whose project holds the run's input files.
+#' @param eda_results Consolidated EDA results; any table without a `Combo`
+#'   column covers no series. The run-level `"All"` rows are ignored.
+#'
+#' @return Unique series names in input-listing order. Names read from files
+#'   that match no listed file name keep their read order, after the others.
+#'   No listed input files is an error, as before.
+#' @noRd
+agent_input_series <- function(agent_info, eda_results) {
+  project_info <- agent_info$project_info
+  prefix <- paste0(hash_data(project_info$project_name), "-", hash_data(agent_info$run_id), "-")
+  extension <- paste0(".", project_info$data_output)
+  files <- as.character(list_files(
+    project_info$storage_object,
+    paste0(project_info$path, "/input_data/*", prefix, "*", extension)
+  ))
+  files <- files[!is.na(files) & nzchar(files)]
+  file_names <- fs::path_file(files)
+  file_hashes <- ifelse(startsWith(file_names, prefix) & endsWith(file_names, extension),
+    substr(file_names, nchar(prefix) + 1L, nchar(file_names) - nchar(extension)), NA_character_)
+
+  eda_names <- if (is.data.frame(eda_results) && "Combo" %in% names(eda_results)) {
+    unique(as.character(eda_results$Combo))
+  } else {
+    character()
+  }
+  eda_names <- eda_names[!is.na(eda_names) & eda_names != "All"]
+  eda_hashes <- vapply(eda_names, hash_data, character(1), USE.NAMES = FALSE)
+
+  series <- eda_names[match(file_hashes, eda_hashes)]
+  covered <- !is.na(file_hashes) & !is.na(series)
+  if (all(covered) && length(files)) {
+    return(unique(series))
+  }
+
+  read_names <- read_file(
+    run_info = project_info,
+    file_list = files[!covered],
+    return_type = "df",
+    character_columns = "Combo"
+  ) %>%
+    dplyr::pull(Combo) %>%
+    as.character() %>%
+    unique()
+  position <- match(vapply(read_names, hash_data, character(1), USE.NAMES = FALSE), file_hashes)
+  placed <- !is.na(position) & !covered[position]
+  series[position[placed]] <- read_names[placed]
+  unique(c(series[!is.na(series)], read_names[!placed]))
+}
+
+#' Series that still need local Agent optimization
+#'
+#' The coordinator's completion rule, also used by each local series task
+#' before it does any work. A series needs work when its saved best-run record
+#' misses the accuracy goal (or is missing) and its search has not finished:
+#' the record is not marked complete at `max_iter` or more iterations. A global
+#' winner that misses the goal always needs local work, because its record
+#' marks the global search, not the series' local search, complete.
+#'
+#' @param best_run_tbl Saved best-run records, one per series; may be empty.
+#'   Records saved before `run_complete` and `max_iterations` existed count as
+#'   unfinished.
+#' @param combo_list Series names to consider. Series without a record need work.
+#' @param weighted_mape_goal Accuracy goal of the run.
+#' @param max_iter Iteration target of the run.
+#'
+#' @return Names of the series that need local optimization: all of
+#'   `combo_list` when there are no records, otherwise the unfinished recorded
+#'   series in record order followed by the series without records.
+#' @noRd
+agent_local_combos_to_run <- function(best_run_tbl, combo_list, weighted_mape_goal, max_iter) {
+  if (nrow(best_run_tbl) == 0) {
+    return(combo_list)
+  }
+
+  # check if max_iter OR run_complete columns exist (for backward compatibility)
+  if (!"run_complete" %in% colnames(best_run_tbl) | !"max_iterations" %in% colnames(best_run_tbl)) {
+    best_run_tbl <- best_run_tbl %>%
+      dplyr::mutate(
+        run_complete = FALSE,
+        max_iterations = 0
+      )
+  }
+
+  # set run_complete to FALSE for global models that did not meet mape goal,
+  # which will allow local models to run if needed
+  best_run_tbl <- best_run_tbl %>%
+    dplyr::mutate(
+      run_complete = ifelse(model_type == "global" & weighted_mape > weighted_mape_goal, FALSE, run_complete)
+    )
+
+  # add in missing combos that have not been run yet (no agent best run file)
+  missing_combos <- setdiff(combo_list, best_run_tbl$combo)
+
+  if (length(missing_combos) > 0) {
+    missing_tbl <- tibble::tibble(
+      combo = missing_combos,
+      weighted_mape = Inf,
+      run_complete = FALSE,
+      max_iterations = 0
+    )
+
+    best_run_tbl <- best_run_tbl %>%
+      dplyr::bind_rows(missing_tbl)
+  }
+
+  # filter combos that need local model optimization
+  best_run_tbl %>%
+    dplyr::filter(!is.finite(weighted_mape) | weighted_mape > weighted_mape_goal) %>%
+    dplyr::filter(run_complete == FALSE | max_iterations < max_iter) %>%
+    dplyr::pull(combo) %>%
+    unique()
+}
+
+#' Whether a dispatched local series already finished its search
+#'
+#' A Spark task can run again after it finished, when Spark recomputes a lost
+#' cached result or retries the task. The task then reads its own series'
+#' best-run record by exact path and applies [agent_local_combos_to_run()], so
+#' a finished series returns before listing its run logs or iterating. Only the
+#' series' own record is read; no other path is probed.
+#'
+#' @param agent_info Lean Agent info of the local series task.
+#' @param combo Raw series name.
+#' @param weighted_mape_goal Accuracy goal of the run.
+#' @param max_iter Iteration target of the run.
+#'
+#' @return `TRUE` when the saved record shows the series finished or met the
+#'   goal; `FALSE` when the record is missing or the series needs work. An
+#'   unreadable or empty record is an error.
+#' @noRd
+agent_local_series_done <- function(agent_info, combo, weighted_mape_goal, max_iter) {
+  project_info <- agent_info$project_info
+  project_info$run_name <- agent_info$run_id
+  record <- read_selection_file(project_info, "logs", "-agent_best_run", combo, optional = TRUE)
+  length(agent_local_combos_to_run(record, combo, weighted_mape_goal, max_iter)) == 0L
+}
+
+#' List one Agent workflow's saved run logs once
+#'
+#' The global workflow and each local series list their run logs once when
+#' they start; [fcst_agent_workflow()] then adds each new iteration's run log
+#' itself, so later history reloads read exact paths instead of listing the
+#' large logs folder again. The pattern and folder are the ones
+#' [get_run_info()] lists for [load_run_results()].
+#'
+#' @param agent_info Agent info whose project holds the run logs.
+#' @param combo Hashed series name of a local workflow, or `NULL` for the
+#'   global workflow.
+#'
+#' @return Run-log paths in byte order (the order a listing returns them), or
+#'   `NULL` for blob and OneDrive storage, which keep listing on every reload.
+#' @noRd
+agent_run_log_paths <- function(agent_info, combo = NULL) {
+  project_info <- agent_info$project_info
+  if (!is.null(project_info$storage_object)) {
+    return(NULL)
+  }
+
+  project_name <- paste0(project_info$project_name, "_", if (is.null(combo)) hash_data("all") else combo)
+  pattern <- paste0("/logs/*", hash_data(project_name), "-*.csv")
+  files <- if (is.null(project_info$path)) {
+    list_files(NULL, fs::path(tempdir(), "/logs", fs::path_file(pattern)))
+  } else {
+    list_files(NULL, fs::path(project_info$path, pattern))
+  }
+  files <- as.character(files)
+  sort(files[!is.na(files) & nzchar(files)], method = "radix")
+}
+
+#' Add an iteration's run log to a workflow's known run logs
+#'
+#' @param run_log_paths Run-log paths from [agent_run_log_paths()].
+#' @param run_info Run info of the iteration, from `submit_fcst_run()`.
+#'
+#' @return The paths with the iteration's run log added once, in byte order.
+#' @noRd
+add_agent_run_log_path <- function(run_log_paths, run_info) {
+  run_log <- as.character(local_artifact_path(run_info, "logs", extension = "csv"))
+  sort(unique(c(run_log_paths, run_log)), method = "radix")
+}
+
+#' Optimize local Agent series in parallel
+#'
+#' Dispatches one [agent_local_series_task()] per series through
+#' [run_series_tasks()] from this small frame instead of [iterate_forecast()]'s,
+#' because sparklyr's doSpark serializes the calling frame into every Spark
+#' task: the global iteration's results, EDA and best-run tables there could
+#' reach gigabytes. On Spark and `local_machine` each series runs in its own
+#' process, so a series that crashes is named and dispatched again (see
+#' [run_series_tasks()]).
+#'
+#' @param agent_info_lean Agent info without custom contracts or caches (see
+#'   `agent_custom_worker_info()`), keeping the LLM template.
+#' @param local_combo_list Raw names of the series to optimize.
+#' @param max_iter Iteration target of the run.
+#' @param weighted_mape_goal Accuracy goal of the run.
+#' @param parallel_processing `NULL`, `"local_machine"` or `"spark"`.
+#' @param inner_parallel Whether each series runs its stages on an inner pool.
+#' @param num_cores Cores for the pools, or `NULL` for the defaults.
+#' @param seed Random seed of the run.
+#'
+#' @return A list with one element per series, in series order: `Combo` and
+#'   the fallback `warnings` to relay. Errors, and a series that crashes on
+#'   every attempt (class `finnts_series_crash`), stop the run.
+#' @noRd
+run_agent_local_series <- function(agent_info_lean,
+                                   local_combo_list,
+                                   max_iter,
+                                   weighted_mape_goal,
+                                   parallel_processing,
+                                   inner_parallel,
+                                   num_cores,
+                                   seed) {
+  # evaluate every argument now: an unevaluated one would carry the caller's
+  # frame into each Spark task
+  force(agent_info_lean)
+  force(local_combo_list)
+  force(max_iter)
+  force(weighted_mape_goal)
+  force(parallel_processing)
+  force(inner_parallel)
+  force(num_cores)
+  force(seed)
+
+  context <- list(
+    agent_info_lean = agent_info_lean,
+    max_iter = max_iter,
+    weighted_mape_goal = weighted_mape_goal,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    seed = seed,
+    # each Spark task's share of its node for automatic inner pools (D13)
+    task_cores = spark_inner_cores(num_cores, parallel_processing, inner_parallel)
+  )
+
+  run_series_tasks(
+    items = local_combo_list,
+    task = "agent_local_series_task",
+    context = context,
+    labels = local_combo_list,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    project_info = agent_info_lean$project_info,
+    errorhandling = "stop",
+    iterations = TRUE
+  )
+}
+
+#' Optimize one local Agent series
+#'
+#' The task [run_agent_local_series()] runs for each series. It first skips a
+#' series that already finished (a Spark recompute or retry, or a crashed
+#' series dispatched again; see [agent_local_series_done()]), then lists its
+#' run logs once and runs the remaining iterations, so a redispatched series
+#' resumes after its completed iterations.
+#'
+#' @param item Raw series name.
+#' @param context Shared inputs from [run_agent_local_series()]:
+#'   `agent_info_lean`, `max_iter`, `weighted_mape_goal`, `inner_parallel`,
+#'   `num_cores`, `seed` and `task_cores`.
+#'
+#' @return `list(Combo, warnings)`: the series name and the fallback warnings
+#'   to relay.
+#' @noRd
+agent_local_series_task <- function(item, context) {
+  agent_info_lean <- context$agent_info_lean
+  max_iter <- context$max_iter
+  weighted_mape_goal <- context$weighted_mape_goal
+  inner_parallel <- context$inner_parallel
+
+  message("[agent] Running local model optimization for combo: ", item)
+  fallback_warnings <- list()
+
+  # a re-run task stops here when the series' saved record already shows it
+  # finished, before listing its run logs
+  if (agent_local_series_done(agent_info_lean, item, weighted_mape_goal, max_iter)) {
+    cli::cli_alert_info("Series already finished. Skipping local model optimization.")
+    return(list(Combo = item, warnings = fallback_warnings))
+  }
+
+  # list this series' run logs once; each iteration adds its own run log
+  run_log_paths <- agent_run_log_paths(agent_info_lean, hash_data(item))
+
+  # adjust max iterations based on previous runs
+  previous_runs <- load_run_results(
+    agent_info = agent_info_lean,
+    combo = hash_data(item),
+    run_log_paths = run_log_paths
+  )
+
+  if (!tibble::is_tibble(previous_runs)) {
+    max_iter_adj <- max_iter
+  } else {
+    prev_run_count <- previous_runs %>%
+      dplyr::filter(agent_version == agent_info_lean$agent_version) %>%
+      nrow()
+
+    max_iter_adj <- max_iter - prev_run_count
+  }
+
+  if (max_iter_adj > 0) {
+    if (max_iter_adj < max_iter) {
+      # the count also tells a crash message which iteration was running
+      cli::cli_alert_info(
+        "Adjusting max iterations down due to {prev_run_count} previously completed iteration{?s}."
+      )
+    }
+
+    # run the local model workflow; its iterations and stages share one
+    # inner pool in this process
+    fcst_results <- capture_forecast_warnings(with_inner_pool(fcst_agent_workflow(
+      agent_info = agent_info_lean,
+      combo = hash_data(item),
+      weighted_mape_goal = weighted_mape_goal,
+      parallel_processing = NULL,
+      inner_parallel = inner_parallel,
+      num_cores = context$num_cores,
+      max_iter = max_iter_adj,
+      seed = context$seed,
+      previous_run_results = previous_runs,
+      fallback_available = FALSE,
+      run_log_paths = run_log_paths
+    ), active = inner_parallel, cores = context$task_cores))
+    fallback_warnings <- fcst_results$warnings
+  } else {
+    cli::cli_alert_info("Max iterations already met. Skipping local model optimization.")
+  }
+
+  list(Combo = item, warnings = fallback_warnings)
 }
 
 #' Get the final best forecast for an agent
@@ -734,8 +956,10 @@ final_agent_artifact_exists <- function(project_info, artifact_path) {
 #' @param agent_info Agent identity and project storage settings.
 #' @param suffix Final-output suffix, such as run_metadata or forecast.
 #' @param allow_missing Whether absent outputs may return an empty tibble.
-#' @return The saved data frame. Run-metadata CSV identifiers remain character;
-#'   other columns and output formats retain their existing types. Provider and
+#' @return The saved data frame. Run-metadata CSV identifiers remain character,
+#'   and its other columns are typed from every row, so a settings value such as
+#'   `lag_periods = "1---2"` that a row sample would miss is kept as written.
+#'   Other outputs and formats retain their existing types. Provider and
 #'   unreadable-output failures propagate; no artifacts are written.
 #' @noRd
 load_final_agent_artifact <- function(agent_info,
@@ -747,6 +971,7 @@ load_final_agent_artifact <- function(agent_info,
     "/final_output/", hash_data(project_info$project_name), "-",
     hash_data(agent_info$run_id), "-", suffix, ".", project_info$data_output
   )
+  run_metadata <- identical(suffix, "run_metadata")
 
   if (allow_missing &&
     !final_agent_artifact_exists(project_info, artifact_path)) {
@@ -759,11 +984,12 @@ load_final_agent_artifact <- function(agent_info,
       path = artifact_path,
       return_type = "df",
       allow_missing = allow_missing,
-      character_columns = if (identical(suffix, "run_metadata")) {
+      character_columns = if (run_metadata) {
         c("combo", "agent_run_id", "best_run_name")
       } else {
         NULL
-      }
+      },
+      guess_max = if (run_metadata) Inf else 100
     ),
     warning = function(condition) {
       if (grepl(
@@ -780,24 +1006,43 @@ load_final_agent_artifact <- function(agent_info,
 #' load the best forecast for an agent before saving to disk
 #'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and prepares it before it writes to disk.
-#' On mounted Spark storage the read is repeated with [read_settled()] while it
-#' fails, because the final Spark stages' forecasts can be briefly invisible or
-#' stale there; its errors are unchanged. Best runs are loaded once before the
-#' first read, so repeated reads never list the logs folder again.
+#' It assembles the best-run records its caller passes, normally the saved
+#' `run_metadata` snapshot, and never lists the logs folder. Final outputs
+#' therefore always use the iteration `run_metadata` names, even if a late
+#' worker rewrote a live best-run record after it was saved. The records are
+#' checked for one global iteration and custom-winner identity before any
+#' forecast is read. On mounted Spark storage the read is repeated with
+#' [read_settled()] while it fails, because the final Spark stages' forecasts
+#' can be briefly invisible or stale there; its errors are unchanged. Many local
+#' series' forecasts are read on a series I/O pool (see [map_series_io()]).
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param final_output If TRUE, formats the output for final saving. If FALSE, returns raw forecast data.
+#' @param best_run_tbl Best-run records to assemble: the saved run metadata
+#'   from [load_final_agent_run_metadata()] or [get_best_agent_run()]. Required
+#'   unless `final_output` is TRUE for a hierarchical run, which returns the
+#'   saved reconciled forecast instead.
 #'
 #' @return A tibble containing the final forecast for the agent.
 #' @noRd
 load_agent_forecast <- function(agent_info,
-                                final_output = FALSE) {
+                                final_output = FALSE,
+                                best_run_tbl = NULL) {
   # formatting checks
   check_agent_info(agent_info = agent_info)
 
   reconciled <- agent_info$forecast_approach != "bottoms_up" & final_output
-  best_run_tbl <- if (!reconciled) load_best_agent_run(agent_info)
-  read_settled(function() load_agent_forecast_once(agent_info, reconciled, best_run_tbl),
+  pool <- NULL
+  if (!reconciled) {
+    if (!is.data.frame(best_run_tbl)) {
+      stop("Error in load_agent_forecast(). The best-run records to assemble are required.", call. = FALSE)
+    }
+    validate_global_iteration(best_run_tbl)
+    audit_agent_custom_best(agent_info, best_run_tbl)
+    pool <- series_io_pool(agent_info$project_info, sum(best_run_tbl$model_type == "local", na.rm = TRUE))
+    on.exit(series_io_close(pool), add = TRUE)
+  }
+  read_settled(function() load_agent_forecast_once(agent_info, reconciled, best_run_tbl, pool),
     function(forecasts) TRUE, agent_info$project_info$path, "final Agent forecasts")
 }
 
@@ -810,14 +1055,16 @@ load_agent_forecast <- function(agent_info,
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param reconciled If TRUE, returns the saved reconciled forecast of a
 #'   hierarchical Agent run instead of assembling the best runs.
-#' @param best_run_tbl Best runs from [load_best_agent_run()]; unused when
-#'   `reconciled` is TRUE.
+#' @param best_run_tbl Best runs to assemble; unused when `reconciled` is TRUE.
+#' @param pool Series I/O pool for the local forecast reads, or `NULL` to read
+#'   them in this process. Rows and their order are the same either way.
 #'
 #' @return A tibble containing the final forecast for the agent.
 #' @noRd
 load_agent_forecast_once <- function(agent_info,
                                      reconciled,
-                                     best_run_tbl) {
+                                     best_run_tbl,
+                                     pool = NULL) {
   # check for reconciled forecast and return if found
   if (reconciled) {
     project_info <- agent_info$project_info
@@ -859,46 +1106,11 @@ load_agent_forecast_once <- function(agent_info,
     local_run_tbl <- best_run_tbl %>%
       dplyr::filter(model_type == "local")
 
-    # submit tasks
-    local_fcst_tbl <- foreach::foreach(
-      x = local_run_tbl %>%
-        dplyr::group_split(dplyr::row_number(), .keep = FALSE),
-      .combine = "rbind",
-      .errorhandling = "stop",
-      .verbose = FALSE,
-      .inorder = FALSE,
-      .multicombine = TRUE,
-      .noexport = NULL
-    ) %do%
-      {
-        # metadata
-        project_info <- agent_info$project_info
-
-        project_name <- paste0(
-          agent_info$project_info$project_name,
-          "_",
-          hash_data(x$combo)
-        )
-        run_name <- x$best_run_name
-
-        multiple_recipes <- grepl("---", x$recipes_to_run)
-        multiple_models <- grepl("---", x$models_to_run)
-        average_models <- x$average_models
-
-        run_info <- project_info
-        run_info$project_name <- project_name
-        run_info$run_name <- run_name
-        forecasts <- read_selection_file(run_info, "forecasts", "-single_models", x$combo)
-
-        if ((multiple_models | multiple_recipes) & average_models) {
-          forecasts <- dplyr::bind_rows(forecasts,
-            read_selection_file(run_info, "forecasts", "-average_models", x$combo, optional = TRUE)
-          )
-        }
-
-        return(forecasts)
-      } %>%
-      base::suppressPackageStartupMessages()
+    # read each series' forecasts, in order; on a pool for many series
+    local_items <- lapply(seq_len(nrow(local_run_tbl)), function(index) {
+      list(project_info = agent_info$project_info, run = local_run_tbl[index, , drop = FALSE])
+    })
+    local_fcst_tbl <- do.call(rbind, map_series_io(pool, local_items, read_local_agent_forecast))
 
     # load local forecast files
     if (nrow(local_fcst_tbl) == 0) {
@@ -966,9 +1178,43 @@ load_agent_forecast_once <- function(agent_info,
   return(final_fcst_tbl)
 }
 
+#' Read one local series' selected Agent forecasts
+#'
+#' Per-series task of [load_agent_forecast_once()], run in this process or on a
+#' series I/O pool. Reads the best run's single-model forecasts and, when that
+#' run averaged several models or recipes, its optional average forecasts, by
+#' exact path.
+#'
+#' @param item List with `project_info` (the Agent's project info) and `run`
+#'   (one best-run row with `combo`, `best_run_name`, `models_to_run`,
+#'   `recipes_to_run` and `average_models`).
+#'
+#' @return The series' forecast rows. Missing or unreadable single-model
+#'   forecasts are errors; a missing optional average file adds no rows.
+#' @noRd
+read_local_agent_forecast <- function(item) {
+  x <- item$run
+  run_info <- item$project_info
+  run_info$project_name <- paste0(item$project_info$project_name, "_", hash_data(x$combo))
+  run_info$run_name <- x$best_run_name
+  forecasts <- read_selection_file(run_info, "forecasts", "-single_models", x$combo)
+
+  if ((grepl("---", x$models_to_run) | grepl("---", x$recipes_to_run)) & x$average_models) {
+    forecasts <- dplyr::bind_rows(forecasts,
+      read_selection_file(run_info, "forecasts", "-average_models", x$combo, optional = TRUE)
+    )
+  }
+
+  forecasts
+}
+
 #' Save the final best forecast for an agent
 #'
 #' This function retrieves the final forecast for a Finn agent after the forecast iteration process is complete and saves to disk.
+#' Bottoms-up runs assemble it from the saved `run_metadata`, which must exist
+#' and be readable (it is written just before by `save_best_agent_run()`), so
+#' the forecast names the same iteration as `run_metadata` and the model
+#' summaries. Hierarchical runs save their reconciled forecast.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
@@ -981,11 +1227,13 @@ save_agent_forecast <- function(agent_info) {
   # metadata
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
+  reconciled <- agent_info$forecast_approach != "bottoms_up"
 
   # load the final forecast for the agent
   final_fcst_tbl <- load_agent_forecast(
     agent_info = agent_info,
-    final_output = TRUE
+    final_output = TRUE,
+    best_run_tbl = if (!reconciled) load_final_agent_run_metadata(agent_info)
   )
 
   if (nrow(final_fcst_tbl) == 0) {
@@ -1015,8 +1263,12 @@ save_agent_forecast <- function(agent_info) {
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #'
-#' @return Best-run records, or an empty tibble when no files exist. Numeric
-#'   accuracy fields keep their inferred types; no stored artifacts are modified.
+#' @return Best-run records, or an empty tibble when no files exist. All
+#'   per-series records are read in one call, and each non-identity column is
+#'   typed from every record rather than vroom's 100-row sample. A settings
+#'   value held by a few series, such as `lag_periods = "1---2"`, is therefore
+#'   kept as written instead of being parsed as `NA` or `TRUE`; columns whose
+#'   records agree keep the types a sample gives. No stored artifacts are modified.
 #' @noRd
 load_best_agent_run <- function(agent_info) {
   # metadata
@@ -1042,7 +1294,8 @@ load_best_agent_run <- function(agent_info) {
       run_info = project_info,
       file_list = combo_best_run_list,
       return_type = "df",
-      character_columns = c("combo", "agent_run_id", "best_run_name")
+      character_columns = c("combo", "agent_run_id", "best_run_name"),
+      guess_max = Inf
     )
   }
 
@@ -1128,6 +1381,17 @@ save_best_agent_run <- function(agent_info) {
 #'   to enabled local models when no global best run exists.
 #' @param eda_results Consolidated EDA results used to resolve the legal global
 #'   forecast approaches before reasoning. Not used by local workflows.
+#' @param run_log_paths The workflow's saved run logs from
+#'   [agent_run_log_paths()], or `NULL` to list them on every history reload.
+#'   When given, each iteration that is logged (accepted, rejected or partial)
+#'   adds its own run log, so the reload after it reads exact paths and sees the
+#'   same history a listing would. Reasoning retries reuse the loaded history
+#'   and add no run log. The final paths are returned in `run_log_paths`.
+#' @param resume_run Run-log row of a global iteration cut off after training,
+#'   from [find_resumable_global_run()], or `NULL`. The global workflow first
+#'   finishes that iteration under its own run name (see
+#'   [resume_global_iteration()]); it counts toward `max_iter`. Ignored for
+#'   local series and custom-model runs.
 #' @details Custom contracts constrain mode/representation and preserve existing
 #'   session isolation. Workers receive names and identity references, then load
 #'   the authoritative version-owned enrollment before reasoning. They never
@@ -1145,7 +1409,9 @@ fcst_agent_workflow <- function(agent_info,
                                 seed = 123,
                                 previous_run_results = NULL,
                                 fallback_available = FALSE,
-                                eda_results = NULL) {
+                                eda_results = NULL,
+                                run_log_paths = NULL,
+                                resume_run = NULL) {
   agent_info$custom_enrollment_cache <- new.env(parent = emptyenv())
   agent_info <- load_agent_custom_state(agent_info)
   agent_custom_preflight(agent_info, parallel_processing)
@@ -1221,7 +1487,8 @@ fcst_agent_workflow <- function(agent_info,
         inner_parallel      = inner_parallel,
         num_cores           = num_cores,
         seed                = seed
-      )
+      ),
+      branch = use_checked_forecast
     ),
     get_fcst_output = list(
       fn = "get_fcst_output",
@@ -1256,6 +1523,11 @@ fcst_agent_workflow <- function(agent_info,
         # test if max run iterations have been reached
         ctx$iter <- ctx$iter + 1
         max_runs_reached <- ctx$iter >= ctx$max_iter
+
+        # the iteration's run log is saved; later history reloads read it by path
+        if (!is.null(ctx$run_log_paths)) {
+          ctx$run_log_paths <- add_agent_run_log_path(ctx$run_log_paths, ctx$results$submit_fcst_run)
+        }
 
         cli::cli_alert_info(
           "Forecast Iteration {ctx$iter}/{ctx$max_iter} Complete"
@@ -1313,7 +1585,8 @@ fcst_agent_workflow <- function(agent_info,
       max_retry = 3,
       args = list(
         agent_info = agent_info,
-        combo = combo
+        combo = combo,
+        run_log_paths = "{ctx$run_log_paths}"
       ),
       branch = function(ctx) {
         ctx$reason_history <- ctx$results$load_reason_history
@@ -1345,7 +1618,8 @@ fcst_agent_workflow <- function(agent_info,
     reason_history = reason_history,
     completion_reason = "completed",
     abort_reason = NULL,
-    fallback_available = fallback_available
+    fallback_available = fallback_available,
+    run_log_paths = run_log_paths
   )
 
   if (!is.null(agent_info$custom_agent_contract)) {
@@ -1357,8 +1631,243 @@ fcst_agent_workflow <- function(agent_info,
     }
   }
 
+  # a global iteration cut off after training runs first, under its own run name
+  if (!is.null(resume_run) && is.null(combo) && is.null(agent_info$custom_agent_contract)) {
+    init_ctx <- resume_global_iteration(agent_info, workflow, init_ctx, resume_run)
+  }
+
   # run the graph
   run_graph(agent_info$llm, workflow, init_ctx)
+}
+
+#' Run-name prefix of an Agent run's global iterations
+#'
+#' @param agent_info Agent info of the run.
+#'
+#' @return `agent_<run_id>_<hash of "all">_`; the iteration's timestamp
+#'   suffix follows it.
+#' @noRd
+global_run_prefix <- function(agent_info) {
+  paste0("agent_", agent_info$run_id, "_", hash_data("all"), "_")
+}
+
+#' Find a global iteration that was cut off after training
+#'
+#' A global iteration is recorded (counted by [load_run_results()]) only by
+#' the last write of [log_best_run()], after best-model selection and the
+#' per-series best-run fan-out. An attempt stopped anywhere after training
+#' (for example a Synapse timeout) leaves a run whose 1.5 to 2 hours of
+#' training a restart would redo. This finds the run to resume: the latest
+#' run of this Agent run that has no recorded result (`agent_version` is
+#' missing), whose run log has every value [train_models()] writes when
+#' training finishes, that was created after the latest recorded iteration of
+#' this run (an older one was superseded), and that trained with `seed`, which
+#' training compares with its run log.
+#'
+#' Only global run logs not already read for the history are read: on local
+#' and mounted storage those in `run_log_paths` that are not recorded
+#' iterations; on blob and OneDrive storage (no start listing) the run logs
+#' are listed once. Custom-model runs are never resumed; a restart re-runs
+#' their iteration as before.
+#'
+#' @param agent_info Agent info of the run.
+#' @param run_log_paths The global workflow's start listing from
+#'   [agent_run_log_paths()], or `NULL` on blob and OneDrive storage.
+#' @param previous_runs History from [load_run_results()]; its `run_logs`
+#'   attribute names the recorded iterations.
+#' @param seed Random seed of the current call.
+#'
+#' @return The run's run-log row (a one-row data frame), or `NULL` when no run
+#'   qualifies.
+#' @noRd
+find_resumable_global_run <- function(agent_info, run_log_paths, previous_runs, seed) {
+  if (!is.null(agent_info$custom_agent_contract)) {
+    return(NULL)
+  }
+
+  project_info <- agent_info$project_info
+  child_project <- paste0(project_info$project_name, "_", hash_data("all"))
+  prefix <- global_run_prefix(agent_info)
+  as_time <- function(value) {
+    if (inherits(value, "POSIXct")) value else lubridate::ymd_hms(value, tz = "UTC", quiet = TRUE)
+  }
+
+  recorded_all <- attr(previous_runs, "run_logs")
+  if (!is.data.frame(recorded_all) || !all(c("run_name", "created") %in% names(recorded_all))) {
+    recorded_all <- NULL
+  }
+  recorded_times <- if (is.null(recorded_all)) NULL else {
+    as_time(recorded_all$created[startsWith(as.character(recorded_all$run_name), prefix)])
+  }
+  recorded_times <- recorded_times[!is.na(recorded_times)]
+  latest_recorded <- if (length(recorded_times)) max(recorded_times) else NULL
+
+  logs <- if (is.null(run_log_paths)) {
+    get_run_info(
+      project_name = child_project,
+      run_name = NULL,
+      storage_object = project_info$storage_object,
+      path = project_info$path
+    )
+  } else {
+    recorded_files <- if (is.null(recorded_all) || !nrow(recorded_all)) {
+      character()
+    } else {
+      paste0(
+        hash_data(child_project), "-",
+        vapply(as.character(recorded_all$run_name), hash_data, character(1), USE.NAMES = FALSE), ".csv"
+      )
+    }
+    unread <- run_log_paths[!fs::path_file(run_log_paths) %in% recorded_files]
+    if (!length(unread)) {
+      return(NULL)
+    }
+    read_file(
+      list(storage_object = NULL, path = project_info$path),
+      file_list = unread,
+      return_type = "df",
+      allow_missing = TRUE
+    )
+  }
+
+  trained_columns <- c("run_global_models", "run_local_models", "global_model_recipes", "feature_selection", "seed")
+  if (!is.data.frame(logs) || !nrow(logs) || !all(c("run_name", "created", trained_columns) %in% names(logs))) {
+    return(NULL)
+  }
+
+  created <- as_time(logs$created)
+  unrecorded <- if ("agent_version" %in% names(logs)) is.na(logs$agent_version) else rep(TRUE, nrow(logs))
+  eligible <- startsWith(as.character(logs$run_name), prefix) & unrecorded &
+    stats::complete.cases(as.data.frame(logs)[trained_columns]) &
+    suppressWarnings(as.numeric(logs$seed)) %in% as.numeric(seed) &
+    !is.na(created) & (if (is.null(latest_recorded)) TRUE else created > latest_recorded)
+  if (!any(eligible)) {
+    return(NULL)
+  }
+
+  candidates <- which(eligible)
+  latest <- candidates[order(created[candidates], as.character(logs$run_name[candidates]), decreasing = TRUE)][[1]]
+  logs[latest, , drop = FALSE]
+}
+
+#' Rebuild a cut-off global iteration's settings from its run log
+#'
+#' Each stage of the resumed run compares its settings with the run log and
+#' stops with "Inputs have recently changed" on any difference, so the
+#' proposal is rebuilt from the logged values themselves, in their logged
+#' order (not canonicalized), with missing values as `"NULL"`. It is then
+#' checked as a new proposal would be: [validate_agent_proposal()] against the
+#' models available now and the allowed global approaches, and
+#' [agent_inputs_history_check()] against the recorded iterations.
+#'
+#' @param agent_info Agent info with `global_forecast_approaches` resolved.
+#' @param run_log The run-log row from [find_resumable_global_run()].
+#' @param previous_run_results Formatted run history, or `"No Previous Runs"`.
+#'
+#' @return The validated inputs for [submit_fcst_run()], or `NULL` (with an
+#'   info message naming the run and reason) when the settings are no longer
+#'   valid or a recorded iteration already ran them.
+#' @noRd
+resume_global_run_inputs <- function(agent_info, run_log, previous_run_results) {
+  run_name <- as.character(run_log$run_name[[1]])
+  logged <- function(field) {
+    value <- if (field %in% names(run_log)) run_log[[field]][[1]] else NA
+    if (length(value) != 1L || is.na(value) || !nzchar(trimws(as.character(value)))) "NULL" else as.character(value)
+  }
+  flag <- function(field) {
+    if (field %in% names(run_log)) as.logical(run_log[[field]][[1]]) else NA
+  }
+
+  proposal <- list(
+    models_to_run = logged("models_to_run"),
+    external_regressors = logged("external_regressors"),
+    clean_missing_values = flag("clean_missing_values"),
+    clean_outliers = flag("clean_outliers"),
+    forecast_approach = logged("forecast_approach"),
+    stationary = flag("stationary"),
+    feature_selection = flag("feature_selection"),
+    multistep_horizon = flag("multistep_horizon"),
+    seasonal_period = logged("seasonal_period"),
+    recipes_to_run = logged("recipes_to_run"),
+    lag_periods = logged("lag_periods"),
+    rolling_window_periods = logged("rolling_window_periods"),
+    reasoning = "Resume the interrupted iteration with its saved settings."
+  )
+
+  inputs <- tryCatch(
+    validate_agent_proposal(
+      input_list = proposal,
+      agent_info = agent_info,
+      combo = NULL,
+      available_models = get_available_agent_models(NULL, get_foundation_model_suffix())
+    ),
+    finnts_reason_proposal_invalid = function(error) error
+  )
+  if (inherits(inputs, "condition")) {
+    reason <- conditionMessage(inputs)
+    cli::cli_alert_info("Not resuming global iteration '{run_name}': {reason}")
+    return(NULL)
+  }
+  inputs$negative_forecast <- if (!is.null(agent_info$negative_forecast)) agent_info$negative_forecast else FALSE
+
+  if (is.data.frame(previous_run_results) &&
+    agent_inputs_history_check(inputs, agent_info, NULL, previous_run_results)$duplicate) {
+    cli::cli_alert_info("Not resuming global iteration '{run_name}': a recorded iteration already ran its settings.")
+    return(NULL)
+  }
+  inputs
+}
+
+#' Finish a cut-off global iteration before reasoning about the next one
+#'
+#' Runs the workflow's own submit, output, metrics and logging steps, with
+#' their usual retries, for the run from [find_resumable_global_run()] under
+#' its original timestamp, so [submit_fcst_run()] reuses its run name and the
+#' finished preparation and training. The workflow's logging branch then
+#' counts the iteration and decides the next step, exactly as for a new
+#' iteration. If the settings can't be rebuilt, or the steps still fail after
+#' their retries, the workflow starts with reasoning, as a restart did before;
+#' a failure is reported with the run name and error.
+#'
+#' Side effects: writes what recording the iteration writes (its run-log
+#' values and per-series best-run records).
+#'
+#' @param agent_info Agent info of the global workflow.
+#' @param workflow The global workflow graph from [fcst_agent_workflow()].
+#' @param ctx The graph's initial context.
+#' @param resume_run The run-log row of the iteration to finish.
+#'
+#' @return The context to start the graph from: after the resumed iteration
+#'   (at the refresh or finalize step), or `ctx` unchanged.
+#' @noRd
+resume_global_iteration <- function(agent_info, workflow, ctx, resume_run) {
+  inputs <- resume_global_run_inputs(agent_info, resume_run, ctx$reason_history$previous_run_results)
+  if (is.null(inputs)) {
+    return(ctx)
+  }
+
+  run_name <- as.character(resume_run$run_name[[1]])
+  cli::cli_alert_info("Resuming global iteration '{run_name}': its training finished before the run was interrupted.")
+
+  steps <- workflow[c("submit_fcst_run", "get_fcst_output", "calculate_fcst_metrics", "log_best_run")]
+  steps$submit_fcst_run$args$timestamp <- substring(run_name, nchar(global_run_prefix(agent_info)) + 1L)
+  steps$log_best_run$branch <- NULL
+  steps$log_best_run$`next` <- "stop"
+  steps$stop <- list(fn = NULL)
+  resume_ctx <- ctx
+  resume_ctx$node <- "submit_fcst_run"
+  resume_ctx$results$reason_inputs <- inputs
+
+  resumed <- tryCatch(run_graph(agent_info$llm, steps, resume_ctx), error = function(error) error)
+  if (inherits(resumed, "error")) {
+    reason <- conditionMessage(resumed)
+    cli::cli_alert_warning("Could not resume global iteration '{run_name}': {reason} Starting a new iteration.")
+    return(ctx)
+  }
+
+  decision <- workflow$log_best_run$branch(resumed)
+  decision$ctx$node <- decision$`next`
+  decision$ctx
 }
 
 #' Abort an invalid agent input proposal
@@ -1828,12 +2337,14 @@ new_reason_history <- function(previous_run_results, agent_version = NULL) {
 #'
 #' @param agent_info Agent metadata.
 #' @param combo A combo hash for local models, or NULL for global models.
+#' @param run_log_paths The workflow's known run logs to read by exact path, or
+#'   `NULL` to list them (see [load_run_results()]).
 #'
 #' @return An in-memory reasoning history snapshot.
 #' @noRd
-load_reason_history <- function(agent_info, combo = NULL) {
+load_reason_history <- function(agent_info, combo = NULL, run_log_paths = NULL) {
   new_reason_history(
-    load_run_results(agent_info = agent_info, combo = combo),
+    load_run_results(agent_info = agent_info, combo = combo, run_log_paths = run_log_paths),
     agent_info$agent_version
   )
 }
@@ -2126,54 +2637,12 @@ reason_inputs <- function(agent_info,
   }
 
   # check if these inputs were used before in previous runs
-  previous_runs_tbl <- previous_run_results
+  if (is.data.frame(previous_run_results)) {
+    history_check <- agent_inputs_history_check(input_list, agent_info, combo, previous_run_results)
+    check_inputs <- history_check$check_inputs
+    previous_runs_tbl <- history_check$previous_runs_tbl
 
-  if (is.data.frame(previous_runs_tbl)) {
-    previous_runs_tbl <- previous_runs_tbl %>%
-      dplyr::filter(agent_version == agent_info$agent_version)
-
-    check_inputs <- input_list
-    check_inputs$agent_version <- agent_info$agent_version
-    check_inputs$models_to_run <- collapse_or_na(check_inputs$models_to_run)
-    check_inputs$external_regressors <- collapse_or_na(check_inputs$external_regressors)
-    check_inputs$recipes_to_run <- collapse_or_na(check_inputs$recipes_to_run)
-    check_inputs$lag_periods <- collapse_or_na(check_inputs$lag_periods)
-    check_inputs$rolling_window_periods <- collapse_or_na(check_inputs$rolling_window_periods)
-    check_inputs$seasonal_period <- collapse_or_na(check_inputs$seasonal_period)
-    check_inputs <- check_inputs[names(check_inputs) %in% names(previous_runs_tbl)]
-
-    cols_to_fix <- c(
-      "models_to_run",
-      "external_regressors",
-      "recipes_to_run",
-      "lag_periods",
-      "rolling_window_periods",
-      "seasonal_period"
-    )
-
-    previous_runs_tbl <- previous_runs_tbl %>%
-      dplyr::mutate(
-        dplyr::across(
-          dplyr::all_of(intersect(names(previous_runs_tbl), cols_to_fix)),
-          base::as.character
-        )
-      )
-
-    default_recipes <- if (is.null(combo)) "R1" else NULL
-    normalized_check_inputs <- normalize_agent_run_inputs(
-      check_inputs,
-      date_type = agent_info$project_info$date_type,
-      forecast_horizon = agent_info$forecast_horizon,
-      default_recipes = default_recipes
-    )
-    normalized_previous_runs <- normalize_agent_run_inputs(
-      previous_runs_tbl,
-      date_type = agent_info$project_info$date_type,
-      forecast_horizon = agent_info$forecast_horizon,
-      default_recipes = default_recipes
-    )
-
-    if (does_param_set_exist(normalized_check_inputs, normalized_previous_runs)) {
+    if (history_check$duplicate) {
       cli::cli_alert_info("The proposed input parameters have already been used in a previous run.")
 
       abort_exhausted_agent_search(
@@ -2214,6 +2683,76 @@ reason_inputs <- function(agent_info,
   }
 
   return(input_list)
+}
+
+#' Compare proposed Agent inputs with the current version's history
+#'
+#' The duplicate check of [reason_inputs()], shared with resuming a cut-off
+#' global iteration ([resume_global_run_inputs()]). Proposed values are joined
+#' the way run logs store them, both sides are canonicalized with
+#' [normalize_agent_run_inputs()] (defaults resolved, multipart values sorted),
+#' and only columns the history has are compared.
+#'
+#' @param input_list Validated proposal, including `negative_forecast`.
+#' @param agent_info Agent metadata; only its own version's rows are compared.
+#' @param combo A combo hash for local models, or NULL for global models.
+#' @param previous_run_results Formatted run history (a data frame).
+#'
+#' @return A list: `duplicate` (whether a current-version run used the same
+#'   effective settings), `check_inputs` (the proposal as compared) and
+#'   `previous_runs_tbl` (current-version rows with text multipart values),
+#'   which [reason_inputs()] also uses for its setting-change budgets.
+#' @noRd
+agent_inputs_history_check <- function(input_list, agent_info, combo, previous_run_results) {
+  previous_runs_tbl <- previous_run_results %>%
+    dplyr::filter(agent_version == agent_info$agent_version)
+
+  check_inputs <- input_list
+  check_inputs$agent_version <- agent_info$agent_version
+  check_inputs$models_to_run <- collapse_or_na(check_inputs$models_to_run)
+  check_inputs$external_regressors <- collapse_or_na(check_inputs$external_regressors)
+  check_inputs$recipes_to_run <- collapse_or_na(check_inputs$recipes_to_run)
+  check_inputs$lag_periods <- collapse_or_na(check_inputs$lag_periods)
+  check_inputs$rolling_window_periods <- collapse_or_na(check_inputs$rolling_window_periods)
+  check_inputs$seasonal_period <- collapse_or_na(check_inputs$seasonal_period)
+  check_inputs <- check_inputs[names(check_inputs) %in% names(previous_runs_tbl)]
+
+  cols_to_fix <- c(
+    "models_to_run",
+    "external_regressors",
+    "recipes_to_run",
+    "lag_periods",
+    "rolling_window_periods",
+    "seasonal_period"
+  )
+
+  previous_runs_tbl <- previous_runs_tbl %>%
+    dplyr::mutate(
+      dplyr::across(
+        dplyr::all_of(intersect(names(previous_runs_tbl), cols_to_fix)),
+        base::as.character
+      )
+    )
+
+  default_recipes <- if (is.null(combo)) "R1" else NULL
+  normalized_check_inputs <- normalize_agent_run_inputs(
+    check_inputs,
+    date_type = agent_info$project_info$date_type,
+    forecast_horizon = agent_info$forecast_horizon,
+    default_recipes = default_recipes
+  )
+  normalized_previous_runs <- normalize_agent_run_inputs(
+    previous_runs_tbl,
+    date_type = agent_info$project_info$date_type,
+    forecast_horizon = agent_info$forecast_horizon,
+    default_recipes = default_recipes
+  )
+
+  list(
+    duplicate = does_param_set_exist(normalized_check_inputs, normalized_previous_runs),
+    check_inputs = check_inputs,
+    previous_runs_tbl = previous_runs_tbl
+  )
 }
 
 # Reject a saved default only when every individual path is structurally unusable.
@@ -2290,6 +2829,10 @@ reject_saved_default_forecasts <- function(run_info, run_log, combos, global) {
 #'   Restarted global custom children skip averages and ensembles in their
 #'   custom audit, because parallel finalization writes those later; no
 #'   listing is added.
+#'   Two in-memory run info fields, never saved: a local run sets
+#'   `single_series_project` (its project holds one series, so forecast reads
+#'   skip the condensed-file listing), and a global run carries the forecast its
+#'   output check read as `checked_forecast`, for `use_checked_forecast()`.
 #'
 #' @param agent_info A list containing agent information including project info and run ID.
 #' @param inputs A list of inputs for the forecasting run.
@@ -2429,6 +2972,9 @@ submit_fcst_run <- function(agent_info,
   if (!is.null(combo)) {
     # adjust to prevent unnecessary list_files() calls in spark
     run_info$combo <- combo_value
+    # in memory only: this project holds one series, so it has no condensed
+    # forecasts and get_forecast_data() skips listing for them
+    run_info$single_series_project <- TRUE
   }
   run_info$allow_quality_rejection <- isTRUE(agent_info$allow_quality_rejection) || isTRUE(agent_info$default_reforecast)
   if (isTRUE(agent_info$default_reforecast)) {
@@ -2458,7 +3004,8 @@ submit_fcst_run <- function(agent_info,
         }
         run_info$forecast_selection <- restored[c("selections", "source_selections", "rejected_combos")]
         run_info$selection_combos <- names(restored$selections)
-        validate_run_outputs(run_info, combo)
+        checked <- validate_run_outputs(run_info, combo, keep_forecast = TRUE)
+        if (is.data.frame(checked)) run_info$checked_forecast <- checked
         return(run_info)
       }
       run_info$rebuild_update_models <- TRUE
@@ -2594,11 +3141,14 @@ submit_fcst_run <- function(agent_info,
     }
   }
 
-  # validate that all outputs can be loaded before proceeding
-  validate_run_outputs(
+  # validate that all outputs can be loaded before proceeding; a global run's
+  # forecast read here is handed to the next step (use_checked_forecast())
+  checked <- validate_run_outputs(
     run_info = run_info,
-    combo = combo
+    combo = combo,
+    keep_forecast = TRUE
   )
+  if (is.data.frame(checked)) run_info$checked_forecast <- checked
 
   return(run_info)
 }
@@ -2616,10 +3166,15 @@ submit_fcst_run <- function(agent_info,
 #' @param saved_update Optional complete result already read and validated by
 #'   read_update_result(). Reuses those persisted forecasts and fits without
 #'   listing or downloading them again; preparation objects are still checked.
+#' @param keep_forecast When TRUE and the forecast check is exactly the read
+#'   `get_fcst_output()` makes next (a global run that is neither unpublished
+#'   nor has rejected series), return that forecast so it isn't read again.
+#'   Its warnings are not suppressed, as they are not in `get_fcst_output()`.
 #'
-#' @return TRUE invisibly if all outputs are valid.
+#' @return TRUE invisibly if all outputs are valid, or the kept forecast table
+#'   (invisibly) when `keep_forecast` applies.
 #' @noRd
-validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL) {
+validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL, keep_forecast = FALSE) {
   # determine combo hash for file paths
   if (is.null(combo)) {
     forecast_combo <- "All-Data"
@@ -2630,10 +3185,17 @@ validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL) {
   }
 
   # validate forecast data
-  fcst_tbl <- if (!is.null(saved_update)) saved_update$forecasts else tryCatch(
-    if (isTRUE(run_info$forecast_selection$unpublished)) {
+  unpublished <- isTRUE(run_info$forecast_selection$unpublished)
+  rejected <- !is.null(run_info$forecast_selection) && length(run_info$forecast_selection$rejected_combos)
+  kept_forecast <- NULL
+  fcst_tbl <- if (!is.null(saved_update)) saved_update$forecasts else if (isTRUE(keep_forecast) &&
+    is.null(combo) && !unpublished && !rejected) {
+    kept_forecast <- tryCatch(get_forecast_data(run_info), error = function(e) NULL)
+    kept_forecast
+  } else tryCatch(
+    if (unpublished) {
       NULL
-    } else if (!is.null(run_info$forecast_selection) && length(run_info$forecast_selection$rejected_combos)) {
+    } else if (rejected) {
       read_candidate_forecasts(run_info, run_info$selection_combos)
     } else {
       load_combo_forecast(combo = forecast_combo, run_info = run_info)
@@ -2642,7 +3204,7 @@ validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL) {
   ) %>%
     base::suppressWarnings()
 
-  if (!isTRUE(run_info$forecast_selection$unpublished) && (is.null(fcst_tbl) || nrow(fcst_tbl) == 0)) {
+  if (!unpublished && (is.null(fcst_tbl) || nrow(fcst_tbl) == 0)) {
     stop(
       "Failed to load forecast data for run '", run_info$run_name,
       "' (combo: ", forecast_combo, "). ",
@@ -2714,7 +3276,34 @@ validate_run_outputs <- function(run_info, combo = NULL, saved_update = NULL) {
     }
   }
 
+  if (!is.null(kept_forecast)) {
+    return(invisible(kept_forecast))
+  }
   invisible(TRUE)
+}
+
+#' Hand a submitted run's checked forecast to the metrics step
+#'
+#' Branch of the `submit_fcst_run` workflow step. A global run's
+#' `validate_run_outputs()` reads the same forecast `get_fcst_output()` would,
+#' and `submit_fcst_run()` keeps it as `run_info$checked_forecast`. This moves
+#' it to the `get_fcst_output` result and skips that step, so the forecast is
+#' read once. Removing it from the run info keeps the table out of later steps,
+#' such as best-run logging, which pass the run info on. Without a checked
+#' forecast, `get_fcst_output()` runs as before.
+#'
+#' @param ctx Workflow context after `submit_fcst_run()`.
+#'
+#' @return A list with the updated `ctx` and the `next` step name.
+#' @noRd
+use_checked_forecast <- function(ctx) {
+  checked <- ctx$results$submit_fcst_run$checked_forecast
+  if (is.null(checked)) {
+    return(list(ctx = ctx, `next` = "get_fcst_output"))
+  }
+  ctx$results$submit_fcst_run$checked_forecast <- NULL
+  ctx$results$get_fcst_output <- checked
+  list(ctx = ctx, `next` = "calculate_fcst_metrics")
 }
 
 #' Get forecast output from a Finn run
@@ -3076,12 +3665,44 @@ log_best_run <- function(agent_info,
 # read: an exact probe of a series without a record would let a FUSE mount (for
 # example Synapse /synfs) cache "not found" and hide the record parallel local
 # workers write later. No listing is added. Without it (direct callers), each
-# series is read exactly as before. Read failures propagate.
-read_agent_best_run_records <- function(project_info, series, known = NULL) {
-  stats::setNames(lapply(series, function(combo) {
-    if (!is.null(known) && !combo %in% known$series) return(tibble::tibble())
-    read_selection_file(project_info, "logs", "-agent_best_run", combo, optional = TRUE)
-  }), series)
+# series is read exactly as before. `pool` (from series_io_pool()) runs the
+# exact reads on workers; NULL reads in this process. Read failures propagate.
+read_agent_best_run_records <- function(project_info, series, known = NULL, pool = NULL) {
+  records <- rep(list(tibble::tibble()), length(series))
+  saved <- if (is.null(known)) rep(TRUE, length(series)) else series %in% known$series
+  items <- lapply(series[saved], function(combo) list(project_info = project_info, combo = combo))
+  records[saved] <- map_series_io(pool, items, read_agent_best_run_record)
+  stats::setNames(records, series)
+}
+
+# Per-series task of read_agent_best_run_records(): `item` holds `project_info`
+# and the raw `combo`. Returns the series' saved best-run record by exact path,
+# or an empty tibble when it is missing; read errors propagate.
+read_agent_best_run_record <- function(item) {
+  read_selection_file(item$project_info, "logs", "-agent_best_run", item$combo, optional = TRUE)
+}
+
+# Per-series task of log_selected_agent_run(): writes `item$record` as the
+# best-run record of raw series `item$series` under `item$project_info` (the
+# Agent run). Returns the series name; write errors propagate.
+write_agent_best_run_record <- function(item) {
+  write_data(item$record, combo = item$series, run_info = item$project_info, output_type = "log",
+    folder = "logs", suffix = "-agent_best_run")
+  item$series
+}
+
+# Per-series task of log_selected_agent_run(): reads back the record just
+# written for `item$series` by exact path and errors unless it is the one row
+# naming `item$run_name`, that series and `item$agent_version`. Returns the
+# series name.
+check_agent_best_run_record <- function(item) {
+  saved <- read_selection_file(item$project_info, "logs", "-agent_best_run", item$series)
+  if (nrow(saved) != 1L || !identical(as.character(saved$best_run_name), item$run_name) ||
+      !identical(as.character(saved$combo), item$series) ||
+      !isTRUE(as.numeric(saved$agent_version) == as.numeric(item$agent_version))) {
+    stop("Saved best-run record does not match the selected iteration for series: ", item$series, call. = FALSE)
+  }
+  item$series
 }
 
 # Persist a completed iteration using its in-memory selections and metric
@@ -3091,6 +3712,9 @@ read_agent_best_run_records <- function(project_info, series, known = NULL) {
 # Writes existing run/best-run logs and returns status plus retained/written combos.
 # Exact post-write reads verify identity; storage errors propagate. These writes
 # are not a transaction, so reload/update must also reject mixed global metadata.
+# Every decision is made here first; the per-series reads, writes and read-backs
+# then run on a series I/O pool when there are many series on mounted storage
+# (see map_series_io()), with the same files and the run log still written last.
 log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_best_run = TRUE,
                                    weighted_mape = NULL, run_history = NULL) {
   if (!is.null(agent_info$custom_agent_contract)) audit_agent_custom_child(agent_info, run_info,
@@ -3129,11 +3753,13 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
   }
   project_info <- agent_info$project_info
   project_info$run_name <- agent_info$run_id
+  pool <- series_io_pool(project_info, length(current_result$selections))
+  on.exit(series_io_close(pool), add = TRUE)
   previous_by_series <- NULL
   promote_global <- isTRUE(summary$acceptable) && is.finite(current_log$weighted_mape) && promote_run
   if (global && check_best_run) {
     previous_by_series <- read_agent_best_run_records(project_info, names(current_result$selections),
-      agent_info$best_run_records)
+      agent_info$best_run_records, pool)
     previous_global <- dplyr::bind_rows(previous_by_series)
     if (nrow(previous_global)) {
       previous_global <- previous_global[
@@ -3155,7 +3781,7 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
       }
     }
   }
-  written <- character()
+  pending <- list()
   retained <- character()
   # Apply the global gate uniformly. A single global run may improve the overall
   # result while worsening one series; never mix its global rows with an old run.
@@ -3203,22 +3829,20 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
     best_log$weighted_mape <- score$WMAPE
     best_log$max_iterations <- 0
     best_log$run_complete <- FALSE
-    write_data(best_log, combo = series, run_info = project_info, output_type = "log",
-      folder = "logs", suffix = "-agent_best_run")
-    written <- c(written, series)
+    pending[[series]] <- best_log
   }
+  written <- as.character(names(pending))
+  map_series_io(pool, lapply(written, function(series) {
+    list(project_info = project_info, series = series, record = pending[[series]])
+  }), write_agent_best_run_record)
   # records written here (on the coordinator for global runs) are known to exist
   if (!is.null(agent_info$best_run_records)) {
     agent_info$best_run_records$series <- union(agent_info$best_run_records$series, written)
   }
-  for (series in written) {
-    saved <- read_selection_file(project_info, "logs", "-agent_best_run", series)
-    if (nrow(saved) != 1L || !identical(as.character(saved$best_run_name), run_info$run_name) ||
-        !identical(as.character(saved$combo), series) ||
-        !isTRUE(as.numeric(saved$agent_version) == as.numeric(agent_info$agent_version))) {
-      stop("Saved best-run record does not match the selected iteration for series: ", series, call. = FALSE)
-    }
-  }
+  map_series_io(pool, lapply(written, function(series) {
+    list(project_info = project_info, series = series, run_name = run_info$run_name,
+      agent_version = agent_info$agent_version)
+  }), check_agent_best_run_record)
   write_data(current_log, combo = NULL, run_info = run_info, output_type = "log", folder = "logs", suffix = NULL)
   list(status = current_log$selection_status, selected_combos = c(retained, written))
 }
@@ -3230,6 +3854,9 @@ log_selected_agent_run <- function(agent_info, run_info, combo = NULL, check_bes
 #' it updates all combo files. For local models, it updates a single combo file.
 #' Identity columns are read as text before rewriting, preserving numeric-looking
 #' run hashes and leading-zero series names while metrics retain their types.
+#' Global records are rewritten one series per task with
+#' [finalize_agent_best_run_record()], on a series I/O pool when there are many
+#' on mounted storage (see [map_series_io()]); the rewritten files are the same.
 #'
 #' @param agent_info Agent info from `set_agent_info()`
 #' @param combo A character string representing the hashed combo. If NULL or "all", updates all combos for global models.
@@ -3324,42 +3951,60 @@ finalize_run <- function(agent_info,
     return("Run finalized successfully.")
   }
 
-  for (combo_name in combo_list) {
-    combo_hash <- hash_data(combo_name)
+  pool <- series_io_pool(project_info, length(combo_list))
+  on.exit(series_io_close(pool), add = TRUE)
+  map_series_io(pool, lapply(combo_list, function(combo_name) {
+    list(project_info = project_info, run_id = agent_info$run_id, combo = combo_name, max_iter = max_iter)
+  }), finalize_agent_best_run_record)
 
-    best_run_file <- paste0(
-      project_info$path, "/logs/",
-      hash_data(project_info$project_name), "-",
-      hash_data(agent_info$run_id), "-",
-      combo_hash, "-agent_best_run.csv"
-    ) %>% fs::path_tidy()
+  return("Run finalized successfully.")
+}
 
-    best_run_tbl <- read_file(
-      run_info = project_info,
-      file_list = best_run_file,
-      return_type = "df",
-      character_columns = c("combo", "agent_run_id", "best_run_name")
-    )
+#' Mark one global series' best-run record complete
+#'
+#' Per-series task of [finalize_run()], run in this process or on a series I/O
+#' pool: reads the series' best-run record by exact path, with identity columns
+#' as text, and rewrites it with `max_iterations` and `run_complete = TRUE`.
+#'
+#' @param item List with `project_info` (Agent run as `run_name`), `run_id`,
+#'   the raw `combo` name and `max_iter`.
+#'
+#' @return The combo name. Errors when the record is missing or empty.
+#' @noRd
+finalize_agent_best_run_record <- function(item) {
+  project_info <- item$project_info
+  best_run_file <- paste0(
+    project_info$path, "/logs/",
+    hash_data(project_info$project_name), "-",
+    hash_data(item$run_id), "-",
+    hash_data(item$combo), "-agent_best_run.csv"
+  ) %>% fs::path_tidy()
 
-    if (nrow(best_run_tbl) == 0) {
-      stop(
-        paste0("Error in finalize_run(). No best run file found for combo: ", combo_name),
-        call. = FALSE
-      )
-    }
+  best_run_tbl <- read_file(
+    run_info = project_info,
+    file_list = best_run_file,
+    return_type = "df",
+    character_columns = c("combo", "agent_run_id", "best_run_name")
+  )
 
-    # update max_iterations and run_complete
-    write_data(
-      x = best_run_tbl %>% dplyr::mutate(max_iterations = max_iter, run_complete = TRUE),
-      combo = combo_name,
-      run_info = project_info,
-      output_type = "log",
-      folder = "logs",
-      suffix = "-agent_best_run"
+  if (nrow(best_run_tbl) == 0) {
+    stop(
+      paste0("Error in finalize_run(). No best run file found for combo: ", item$combo),
+      call. = FALSE
     )
   }
 
-  return("Run finalized successfully.")
+  # update max_iterations and run_complete
+  write_data(
+    x = best_run_tbl %>% dplyr::mutate(max_iterations = item$max_iter, run_complete = TRUE),
+    combo = item$combo,
+    run_info = project_info,
+    output_type = "log",
+    folder = "logs",
+    suffix = "-agent_best_run"
+  )
+
+  item$combo
 }
 
 #' Load previous run results for the agent
@@ -3369,6 +4014,10 @@ finalize_run <- function(agent_info,
 #' @param current_run_log Optional data frame of the current run's log entry
 #'   (not yet saved to disk). When supplied, it is appended to the on-disk runs
 #'   so the best-run comparison can include the current run.
+#' @param run_log_paths The workflow's run logs from [agent_run_log_paths()],
+#'   read by exact path instead of listing the logs folder. `NULL` (the
+#'   default) lists them with [get_run_info()]. Both read the same files the
+#'   same way, so the result is the same.
 #'
 #' @return A tibble containing the previous run results or a message indicating no previous runs.
 #'   Active custom histories require the same parent identity for current rows;
@@ -3377,7 +4026,8 @@ finalize_run <- function(agent_info,
 #' @noRd
 load_run_results <- function(agent_info,
                              combo = NULL,
-                             current_run_log = NULL) {
+                             current_run_log = NULL,
+                             run_log_paths = NULL) {
   # determine the combo value and columns to return
   if (is.null(combo)) {
     combo_value <- hash_data("all")
@@ -3411,12 +4061,21 @@ load_run_results <- function(agent_info,
     ifelse(is.null(combo), hash_data("all"), combo_value)
   )
 
-  previous_runs <- get_run_info(
-    project_name = project_name,
-    run_name = NULL,
-    storage_object = agent_info$project_info$storage_object,
-    path = agent_info$project_info$path
-  )
+  previous_runs <- if (is.null(run_log_paths)) {
+    get_run_info(
+      project_name = project_name,
+      run_name = NULL,
+      storage_object = agent_info$project_info$storage_object,
+      path = agent_info$project_info$path
+    )
+  } else {
+    read_file(
+      list(storage_object = NULL, path = agent_info$project_info$path),
+      file_list = run_log_paths,
+      return_type = "df",
+      allow_missing = TRUE
+    )
+  }
   if (!"selection_status" %in% names(previous_runs)) previous_runs$selection_status <- NA_character_
 
   # columns that must remain numeric for downstream arithmetic

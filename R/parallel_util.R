@@ -102,6 +102,66 @@ spark_inner_cores <- function(num_cores, parallel_processing, inner_parallel) {
   spark_task_cores(conf[["spark.executor.cores"]], conf[["spark.task.cpus"]], parallelly::availableCores())
 }
 
+#' Number of tasks the Spark cluster can run at once
+#'
+#' Reads the active connection's settings with `spark_conf_values()`: tasks per
+#' executor (`spark.executor.cores` divided by `spark.task.cpus`) times the
+#' executor count (`spark.dynamicAllocation.maxExecutors` with dynamic
+#' allocation, otherwise `spark.executor.instances`).
+#'
+#' @return A positive number, or `NA` when `spark.executor.cores` or the
+#'   executor count is unset, unbounded or unreadable (for example on
+#'   Databricks, which leaves `spark.executor.cores` unset).
+#' @noRd
+spark_task_slots <- function() {
+  conf <- spark_conf_values(c(
+    "spark.executor.cores", "spark.task.cpus", "spark.dynamicAllocation.enabled",
+    "spark.dynamicAllocation.maxExecutors", "spark.executor.instances"
+  ))
+  if (is.null(conf)) {
+    return(NA_real_)
+  }
+  number <- function(key) suppressWarnings(as.numeric(conf[[key]]))
+  cores <- number("spark.executor.cores")
+  task_cpus <- number("spark.task.cpus")
+  if (is.na(task_cpus) || task_cpus < 1) {
+    task_cpus <- 1
+  }
+  dynamic <- identical(tolower(conf[["spark.dynamicAllocation.enabled"]]), "true")
+  executors <- number(if (dynamic) "spark.dynamicAllocation.maxExecutors" else "spark.executor.instances")
+  if (is.na(cores) || cores < 1 || is.na(executors) || !is.finite(executors) || executors < 1) {
+    return(NA_real_)
+  }
+  max(1, floor(cores / task_cpus)) * executors
+}
+
+#' Group a short Spark stage's series into tasks
+#'
+#' Every Spark task starts a new R process that loads finnts and its
+#' dependencies (10 to 14 s on Synapse), longer than the few seconds of work
+#' one series needs in EDA, best-model selection and model summaries. Those
+#' stages run several series per task instead: contiguous groups, so at most
+#' four tasks per slot (`spark_task_slots()`). Callers run each group's series
+#' one after another with their usual per-series code, so outputs do not
+#' change. Without Spark, or when the slot count is unknown, every series keeps
+#' its own task.
+#'
+#' @param items The stage's series, as a vector or a list of jobs.
+#' @param parallel_processing The stage's `parallel_processing`.
+#'
+#' @return An unnamed list of groups, each a piece of `items` in its original
+#'   order; together they hold every item once, in order.
+#' @noRd
+spark_stage_batches <- function(items, parallel_processing) {
+  count <- length(items)
+  if (count == 0L) {
+    return(list())
+  }
+  slots <- if (identical(parallel_processing, "spark")) spark_task_slots() else NA_real_
+  size <- if (is.na(slots)) 1 else max(1, ceiling(count / (4 * slots)))
+  unname(split(items, ceiling(seq_len(count) / size)))
+}
+
 # Per-process record of the future plan finnts registered for its active local
 # PSOCK pool: `cluster` is that pool and `previous` is the caller's plan to
 # restore. One slot suffices because a process runs at most one finnts pool at a
@@ -525,6 +585,114 @@ par_end <- function(cl) {
 par_end_on_exit <- function(cl, env = parent.frame()) {
   do.call(base::on.exit, list(bquote(par_end(.(cl))), TRUE, FALSE), envir = env)
   invisible(NULL)
+}
+
+#' Workers for per-series artifact I/O on the coordinator
+#'
+#' Agent finalization reads and writes one small artifact per series in the
+#' coordinating R session. On mounted Spark storage (`/synfs` or `/dbfs`, see
+#' `settle_waits()`) each operation mostly waits on the mount, so a pool of R
+#' processes overlaps them. On a Synapse Spark pool (2026-11-17), 1,000 one-row best-run
+#' finalizations took 207 ms each in sequence and 4.4 ms each on 16 workers
+#' reading with one vroom thread (8 workers 7.6 ms, 4 workers 14.9 ms), after an
+#' 11 s pool start. Fewer than 100 operations stay sequential, so local
+#' workflows never start a pool. Local disk and cloud storage objects (blob,
+#' OneDrive) always run in sequence; the latter would also ship credentials.
+#'
+#' @param run_info Run or project info; its `path` and `storage_object` decide.
+#' @param n Number of per-series operations.
+#'
+#' @return Worker count: 1 to run in sequence, otherwise 2 to 16, with about
+#'   50 operations per worker and one core left free.
+#' @noRd
+series_io_workers <- function(run_info, n) {
+  if (!is.null(run_info$storage_object) || !length(settle_waits(run_info$path)) || n < 100L) {
+    return(1L)
+  }
+  max(1L, min(16L, get_cores(NULL), as.integer(n %/% 50L)))
+}
+
+#' Start a pool for per-series artifact I/O
+#'
+#' The pool attaches finnts on each worker (see `par_make_pool()`) and is
+#' independent of foreach backends, future plans and inner pools, so it can
+#' run inside any stage. Close it with `series_io_close()`, normally in an
+#' `on.exit()` of the caller, so a failed stage never leaves workers running.
+#'
+#' @param run_info Run or project info for `series_io_workers()` and the pool.
+#' @param n Number of per-series operations the pool will run.
+#'
+#' @return A PSOCK cluster, or `NULL` when the operations should run in this
+#'   process.
+#' @noRd
+series_io_pool <- function(run_info, n) {
+  workers <- series_io_workers(run_info, n)
+  if (workers < 2L) {
+    return(NULL)
+  }
+  par_make_pool(run_info, workers, character())
+}
+
+#' Stop a per-series artifact I/O pool
+#'
+#' @param cl Pool from `series_io_pool()`, or `NULL`.
+#'
+#' @return `NULL`, invisibly. Errors while stopping are ignored so they never
+#'   mask the error of a failed stage.
+#' @noRd
+series_io_close <- function(cl) {
+  if (!is.null(cl)) try(parallel::stopCluster(cl), silent = TRUE)
+  invisible(NULL)
+}
+
+#' Run one per-series task, returning its error instead of raising it
+#'
+#' @param item One task input.
+#' @param task Function of one item.
+#'
+#' @return The task's value, or its error condition.
+#' @noRd
+series_io_try <- function(item, task) {
+  tryCatch(task(item), error = identity)
+}
+
+#' Run per-series tasks on a pool's workers
+#'
+#' @param cl PSOCK cluster from `series_io_pool()`.
+#' @param items List of task inputs.
+#' @param task Package-level function of one item (a closure would ship its
+#'   whole environment to every worker).
+#'
+#' @return List of task values or error conditions, in the order of `items`.
+#' @noRd
+series_io_apply <- function(cl, items, task) {
+  parallel::parLapply(cl, items, series_io_try, task = task)
+}
+
+#' Run per-series artifact tasks in this process or on a pool
+#'
+#' Each task does exactly the reads and writes the sequential loop it replaces
+#' did for one series, so saved files are byte-identical either way. Without a
+#' pool the tasks run in order and the first error stops the loop, as before.
+#' On a pool every task runs, then the first error in item order is raised
+#' with its original class and message; the other series' writes are kept, as
+#' an interrupted sequential loop keeps the series before the failure.
+#'
+#' @param cl Pool from `series_io_pool()`, or `NULL` to run in this process.
+#' @param items List of task inputs, one per series.
+#' @param task Package-level function of one item.
+#'
+#' @return List of task values in the order of `items`.
+#' @noRd
+map_series_io <- function(cl, items, task) {
+  if (is.null(cl) || !length(items)) {
+    return(lapply(items, task))
+  }
+  results <- series_io_apply(cl, items, task)
+  for (result in results) {
+    if (inherits(result, "error")) stop(result)
+  }
+  results
 }
 
 

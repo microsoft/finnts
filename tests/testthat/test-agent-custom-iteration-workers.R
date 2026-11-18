@@ -8,25 +8,25 @@ test_that("installed custom Agent forecasts dispatch to two independent real wor
   payload_observations <- withr::local_tempdir()
   args$llm <- custom_agent_chat(custom_agent_response(), observation_path = observations)
   info <- do.call(set_agent_info, args)
-  original_parallel <- finnts:::par_start
+  original_start <- finnts:::start_series_process
   testthat::local_mocked_bindings(
     get_eda_data = function(...) data.frame(done = TRUE), load_eda_results = function(...) "Offline EDA",
-    par_start = function(...) {
-      parallel_info <- original_parallel(...)
-      if (!is.null(parallel_info$cl))
-        parallel::clusterCall(parallel_info$cl, function(expected_namespace, destination) {
-          stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
-          original <- finnts:::fcst_agent_workflow
-          testthat::local_mocked_bindings(fcst_agent_workflow = function(agent_info, ...) {
-            saveRDS(list(pid = Sys.getpid(), lean = is.null(agent_info$custom_agent_contract) &&
-              is.null(agent_info$custom_agent_update) && is.null(agent_info$custom_enrollment_cache) &&
-              is.null(agent_info$selection_cache)), file.path(destination, paste0(Sys.getpid(), ".rds")))
-            original(agent_info, ...)
-          }, .package = "finnts", .env = globalenv())
-          testthat::local_mocked_bindings(load_eda_results = function(...) "Offline EDA", .package = "finnts", .env = globalenv())
-          invisible(NULL)
-        }, namespace, payload_observations)
-      parallel_info
+    start_series_process = function(task, item, context, packages) {
+      # run the series task in its own process under the observation mocks
+      observed <- function(item, context) {
+        stopifnot(identical(normalizePath(getNamespaceInfo(asNamespace("finnts"), "path")), normalizePath(expected_namespace)))
+        original <- get("fcst_agent_workflow", envir = asNamespace("finnts"))
+        testthat::local_mocked_bindings(fcst_agent_workflow = function(agent_info, ...) {
+          saveRDS(list(pid = Sys.getpid(), lean = is.null(agent_info$custom_agent_contract) &&
+            is.null(agent_info$custom_agent_update) && is.null(agent_info$custom_enrollment_cache) &&
+            is.null(agent_info$selection_cache)), file.path(destination, paste0(Sys.getpid(), ".rds")))
+          original(agent_info, ...)
+        }, load_eda_results = function(...) "Offline EDA", .package = "finnts")
+        get(task_name, envir = asNamespace("finnts"))(item, context)
+      }
+      environment(observed) <- list2env(list(task_name = task, expected_namespace = namespace,
+        destination = payload_observations), parent = globalenv())
+      original_start(observed, item, context, packages)
     }, .package = "finnts"
   )
   sequential_args <- custom_agent_inputs(withr::local_tempdir(), series = 2L)

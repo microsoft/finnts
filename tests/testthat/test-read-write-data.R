@@ -422,3 +422,46 @@ test_that("get_forecast_data re-reads forecasts that are stale on mounted storag
   expect_identical(reads, 3L)
   expect_identical(listings, fresh_listings)
 })
+
+test_that("small CSV artifacts use one vroom thread unless VROOM_THREADS is set", {
+  withr::local_envvar(VROOM_THREADS = NA)
+  run_info <- artifact_test_run(withr::local_tempdir())
+  rows <- tibble::tibble(Combo = c("A", "B"), Forecast = c(1, 2))
+  path <- artifact_test_path(run_info, "forecasts", suffix = "-single_models")
+  threads <- list()
+  original_read <- vroom::vroom
+  original_write <- vroom::vroom_write
+  local_mocked_bindings(
+    vroom = function(file, ...) {
+      threads$read <<- list(...)$num_threads %||% "default"
+      original_read(file, ...)
+    },
+    vroom_write = function(x, file, ...) {
+      threads$write <<- list(...)$num_threads %||% "default"
+      original_write(x, file, ...)
+    },
+    .package = "vroom"
+  )
+
+  write_data(rows, NULL, run_info, "data", "forecasts", "-single_models")
+  expect_identical(read_file(run_info, file_list = path)$Forecast, rows$Forecast)
+  expect_identical(threads, list(write = 1L, read = 1L))
+
+  withr::local_envvar(VROOM_THREADS = "3")
+  write_data(rows, NULL, run_info, "data", "forecasts", "-single_models")
+  expect_identical(read_file(run_info, file_list = path)$Forecast, rows$Forecast)
+  expect_identical(threads, list(write = "default", read = "default"))
+})
+
+test_that("larger CSV artifacts use four vroom threads, then vroom's default for reads", {
+  withr::local_envvar(VROOM_THREADS = NA)
+  expect_identical(csv_read_threads(c(2e3, 6e5)), 1L)
+  expect_identical(csv_read_threads(NA_real_), 1L)
+  expect_identical(csv_read_threads(5e6), 4L)
+  expect_null(csv_read_threads(6e7))
+  expect_identical(csv_write_threads(9e4), 1L)
+  expect_identical(csv_write_threads(2e5), 4L)
+  withr::local_envvar(VROOM_THREADS = "8")
+  expect_null(csv_read_threads(2e3))
+  expect_null(csv_write_threads(2e5))
+})

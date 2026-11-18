@@ -291,3 +291,35 @@ test_that("installed train_models dispatches exact recipe reads to real PSOCK wo
     parallel_processing = "local_machine", num_cores = 2
   ), "Missing required Finn artifact.*R1")
 })
+
+test_that("installed global finalization on real series I/O workers saves the same bytes", {
+  package_path <- getNamespaceInfo(asNamespace("finnts"), "path")
+  skip_if_not(file.exists(file.path(package_path, "Meta", "package.rds")),
+    "Real series I/O workers are verified from the installed namespace"
+  )
+  skip_if_fewer_workers(2)
+  withr::local_envvar(c(R_LIBS = paste(.libPaths(), collapse = .Platform$path.sep)))
+  combos <- c("North", "South", "East")
+  # Save three global best-run records under `path`, finalize them and return
+  # each record file's lines keyed by file name.
+  run_finalize <- function(path) {
+    project_info <- list(project_name = "series_io_workers", run_name = "agent", path = path,
+      data_output = "csv", object_output = "rds", storage_object = NULL)
+    for (combo in combos) {
+      write_data(tibble::tibble(combo = combo, model_type = "global", agent_run_id = "agent",
+        best_run_name = "iteration-1", weighted_mape = 0.1, max_iterations = 0, run_complete = FALSE),
+        combo, project_info, "log", "logs", "-agent_best_run")
+    }
+    expect_identical(finalize_run(list(project_info = project_info, run_id = "agent", max_iter = 3)),
+      "Run finalized successfully.")
+    files <- sort(fs::dir_ls(fs::path(path, "logs"), glob = "*-agent_best_run.csv"))
+    stats::setNames(lapply(files, readLines), fs::path_file(files))
+  }
+  sequential <- run_finalize(withr::local_tempdir())
+  local_mocked_bindings(series_io_workers = function(run_info, n) 2L)
+
+  pooled <- run_finalize(withr::local_tempdir())
+
+  expect_length(pooled, length(combos))
+  expect_identical(pooled, sequential)
+})

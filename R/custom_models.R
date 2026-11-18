@@ -66,7 +66,7 @@ custom_model_allowed_packages <- function() {
     "feasts", "foreach", "forecast", "fs", "future", "future.apply", "generics", "glue", "glmnet",
     "httr", "hts", "jsonlite", "kernlab", "lubridate", "magrittr", "parallelly", "parsnip",
     "purrr", "recipes", "rlang", "rsample", "rules", "snakecase", "stringr",
-    "tibble", "tidyr", "tidyselect", "timetk", "tune", "vroom", "workflows",
+    "tibble", "tidyr", "tidyselect", "timetk", "tune", "vroom", "workflows", "yardstick",
     "arrow", "AzureStor", "Boruta", "caret", "corrr", "ellmer", "energy", "knitr",
     "Microsoft365R", "nixtlar", "notebookutils", "processx", "qs2", "ranger", "reactable",
     "rmarkdown", "S7", "sparklyr", "testthat", "tseries", "withr", "xgboost", "vip", "modeltime"

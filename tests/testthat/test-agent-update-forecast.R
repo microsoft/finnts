@@ -529,11 +529,13 @@ run_initial_checks_case <- function(final_outputs,
                          schema = NULL,
                          allow_missing = FALSE,
                          strict = FALSE,
-                         character_columns = NULL) {
+                         character_columns = NULL,
+                         guess_max = 100) {
       artifact <- if (is.null(file_list)) path else file_list
       if (!is.null(artifact_path) && any(file.exists(artifact))) {
         return(original_reader(run_info, path = path, file_list = file_list,
-          return_type = return_type, allow_missing = allow_missing, strict = strict))
+          return_type = return_type, allow_missing = allow_missing, strict = strict,
+          guess_max = guess_max))
       }
       if (!is.null(file_list)) {
         return(agent_runs)
@@ -781,14 +783,16 @@ test_that("local dispatch serializes only reference-only free-variable context",
     par_end = function(...) NULL
   )
   update_local_models(agent, previous, NULL, FALSE, 1, 123)
-  expected <- list(agent_info_lean = lean, project_info = agent$project_info,
-    prev_run_id = "run-4", num_cores = 1, inner_parallel = FALSE, seed = 123, task_cores = 1)
+  context <- list(agent_info_lean = lean, prev_run_id = "run-4", inner_parallel = FALSE,
+    num_cores = 1, seed = 123, task_cores = 1)
+  expected <- list(context = context, isolate = FALSE, task = "agent_local_update_task")
   expect_setequal(names(captured$globals), names(expected))
-  expect_identical(captured$globals$agent_info_lean, lean)
+  expect_identical(captured$globals$context, context)
+  expect_identical(captured$globals[c("isolate", "task")], expected[c("isolate", "task")])
   expect_equal(length(serialize(captured[c("expression", "globals")], NULL)),
     length(serialize(list(expression = captured$expression,
       globals = expected[names(captured$globals)]), NULL)))
-  expect_identical(captured$iterator_names, "combo")
+  expect_identical(captured$iterator_names, "item")
 })
 
 test_that("mixed update dispatch keeps grouped globals and lean local workers", {
@@ -876,6 +880,108 @@ test_that("update wrappers propagate storage failures instead of default fitting
   previous$model_type <- "global"
   expect_error(update_global_models(agent, previous, NULL, FALSE, 1, 123),
     class = "finnts_update_artifact_error")
+})
+
+# Recording foreach operator: keeps the names and serialized size of the frame
+# doSpark would ship to every task, and returns one finished result per series.
+record_update_dispatch <- function() {
+  local({
+    store <- new.env(parent = emptyenv())
+    # doSpark serializes the calling frame into every task: record its binding
+    # names and sizes, and whether any argument is still unevaluated (it would
+    # carry the caller's whole frame)
+    op <- utils::removeSource(function(obj, ex) {
+      frame <- parent.frame()
+      store$names <- ls(frame, all.names = TRUE)
+      store$lazy <- rlang::env_binding_are_lazy(frame)
+      store$bytes <- sum(vapply(store$names, function(name) length(serialize(get(name, frame), NULL)), numeric(1)))
+      lapply(eval(obj$args[[1]], obj$evalenv), function(combo) data.frame(Combo = combo))
+    })
+    list(store = store, op = op)
+  }, envir = new.env(parent = globalenv()))
+}
+
+test_that("update dispatch frames hold only lean context, not run tables or full agent info", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", sprintf("series-%04d", 1:3000))
+  previous$models_to_run <- "lm"
+  previous$settings <- strrep("x", 200)
+  local_dispatch <- record_update_dispatch()
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = local_dispatch$op),
+    par_end = function(...) NULL
+  )
+  update_local_models(agent, previous, NULL, FALSE, 1, 123)
+  expect_false(any(c("previous_best_run_tbl", "previous_best_run_local_tbl", "agent_info") %in%
+    local_dispatch$store$names))
+  expect_false(any(local_dispatch$store$lazy))
+  expect_lt(local_dispatch$store$bytes, length(serialize(previous, NULL)) / 4)
+
+  agent$llm <- list(payload = stats::runif(3e5))
+  default_dispatch <- record_update_dispatch()
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = default_dispatch$op),
+    load_agent_custom_state = function(agent_info, ...) agent_info,
+    get_foundation_model_suffix = function() ""
+  )
+  forecast_new_combos(agent, c("new-a", "new-b"), character(), NULL, FALSE, 1, 123)
+  expect_false(any(c("agent_info", "new_combos", "failed_combos") %in% default_dispatch$store$names))
+  expect_false(any(default_dispatch$store$lazy))
+  expect_lt(default_dispatch$store$bytes, length(serialize(agent$llm, NULL)) / 10)
+})
+
+test_that("a re-run local update task skips a series whose current update is complete", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", c("east", "west"))
+  previous$models_to_run <- "lm"
+  current_east <- make_update_run_metadata("run-5", "east")
+  reads <- character()
+  updated <- character()
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    hash_data = function(value) value,
+    read_exact_artifact = function(run_info, file_list, ..., allow_missing = FALSE) {
+      reads <<- c(reads, file_list)
+      if (grepl("-run-5-east-agent_best_run", file_list, fixed = TRUE)) return(current_east)
+      if (grepl("-run-5-", file_list, fixed = TRUE)) return(NULL)
+      previous[previous$combo == sub(".*-run-4-(.*)-agent_best_run.csv", "\\1", file_list), ]
+    },
+    completed_update_runs = function(agent_info, metadata) metadata,
+    update_forecast_combo = function(agent_info, prev_best_run_tbl, ...) {
+      updated <<- c(updated, prev_best_run_tbl$combo)
+      list(status = "done", quality_rejected_combos = character())
+    }
+  )
+  result <- update_local_models(agent, previous, NULL, FALSE, 1, 123)
+  expect_identical(updated, "west")
+  expect_false(any(grepl("-run-4-east-", reads, fixed = TRUE)))
+  expect_identical(result$failed_combos, character())
+})
+
+test_that("an unreadable current update record stays a hard storage error", {
+  agent <- make_update_agent_info()
+  previous <- make_update_run_metadata("run-4", "west")
+  previous$models_to_run <- "lm"
+  updated <- character()
+  local_mocked_bindings(
+    par_start = function(...) list(cl = NULL, packages = character(), foreach_operator = foreach::`%do%`),
+    par_end = function(...) NULL,
+    hash_data = function(value) value,
+    read_exact_artifact = function(run_info, file_list, ...) {
+      if (grepl("-run-5-west-agent_best_run", file_list, fixed = TRUE)) stop("storage unavailable", call. = FALSE)
+      if (grepl("-run-5-", file_list, fixed = TRUE)) return(NULL)
+      previous
+    },
+    update_forecast_combo = function(agent_info, prev_best_run_tbl, ...) {
+      updated <<- c(updated, prev_best_run_tbl$combo)
+      list(status = "done", quality_rejected_combos = character())
+    }
+  )
+  expect_error(update_local_models(agent, previous, NULL, FALSE, 1, 123),
+    "current completion metadata for series 'west': storage unavailable", fixed = TRUE,
+    class = "finnts_update_artifact_error")
+  expect_length(updated, 0L)
 })
 
 test_that("initial_checks selects a finalized immediate predecessor", {
@@ -1451,7 +1557,8 @@ test_that("analyze_results uses finalized previous versions", {
                          return_type = "df",
                          schema = NULL,
                          allow_missing = FALSE,
-                         character_columns = NULL) {
+                         character_columns = NULL,
+                         guess_max = 100) {
       if (!is.null(file_list)) {
         return(agent_runs)
       }

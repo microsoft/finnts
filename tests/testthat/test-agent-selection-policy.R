@@ -385,7 +385,7 @@ test_that("mixed global iterations cannot be loaded or finalized", {
   expect_error(load_best_agent_run(agent), "single global iteration")
   expect_error(finalize_run(agent), "single global iteration")
   expect_error(save_best_agent_run(agent), "single global iteration")
-  expect_error(load_agent_forecast(agent), "single global iteration")
+  expect_error(load_agent_forecast(agent, best_run_tbl = mixed), "single global iteration")
   expect_identical(writes, 0L)
   expect_identical(forecasts, 0L)
 })
@@ -950,4 +950,63 @@ test_that("local selected logging verifies only new winners and preserves incumb
   current <- original_read(fixture$info, "logs")
   expect_identical(current$selection_status, "rejected")
   expect_true(is.na(current$weighted_mape))
+})
+
+test_that("global promotion on a series I/O pool saves the same logs as sequential promotion", {
+  # Two iterations as in the promotion tests above: a first global run, then a
+  # better one that reads each saved record and replaces it. Returns every logs
+  # file's lines with the fixture folder replaced, keyed by file name.
+  run_promotion <- function(path) {
+    fixture <- make_selected_agent_log_fixture(path)
+    log_best_run(fixture$agent, fixture$info, 0.1, check_best_run = FALSE)
+    later <- fixture$info
+    later$run_name <- "iteration-2"
+    for (index in seq_along(later$forecast_selection$selections)) {
+      later$forecast_selection$selections[[index]]$rankings$WMAPE <- c(0.06, 0.11)[[index]]
+    }
+    later_log <- fixture$log
+    later_log$run_name <- later$run_name
+    write_data(later_log, combo = NULL, run_info = later, output_type = "log", folder = "logs")
+    log_best_run(fixture$agent, later, 0.085)
+    files <- sort(fs::dir_ls(fs::path(path, "logs")))
+    stats::setNames(lapply(files, function(file) gsub(path, "<root>", readLines(file), fixed = TRUE)),
+      fs::path_file(files))
+  }
+  sequential <- run_promotion(withr::local_tempdir())
+  dispatched <- 0L
+  local_mocked_bindings(
+    series_io_pool = function(run_info, n) "stub-pool",
+    series_io_close = function(cl) invisible(NULL),
+    series_io_apply = function(cl, items, task) {
+      dispatched <<- dispatched + length(items)
+      lapply(items, series_io_try, task = task)
+    }
+  )
+
+  pooled <- run_promotion(withr::local_tempdir())
+
+  expect_identical(pooled, sequential)
+  expect_gt(dispatched, 0L)
+})
+
+test_that("a failed best-run write on a series I/O pool is raised before the run log is saved", {
+  fixture <- make_selected_agent_log_fixture(withr::local_tempdir())
+  series <- names(fixture$info$forecast_selection$selections)
+  original_write <- write_data
+  local_mocked_bindings(
+    series_io_pool = function(run_info, n) "stub-pool",
+    series_io_close = function(cl) invisible(NULL),
+    series_io_apply = function(cl, items, task) lapply(items, series_io_try, task = task),
+    write_data = function(x, combo, run_info, output_type, folder = NULL, suffix = NULL) {
+      if (identical(suffix, "-agent_best_run") && identical(combo, series[[1]])) {
+        rlang::abort("best-run record write failed", class = "finnts_test_record_write")
+      }
+      original_write(x, combo, run_info, output_type, folder, suffix)
+    }
+  )
+
+  expect_error(log_best_run(fixture$agent, fixture$info, 0.1, check_best_run = FALSE),
+    class = "finnts_test_record_write"
+  )
+  expect_false("selection_status" %in% names(read_selection_file(fixture$info, "logs")))
 })

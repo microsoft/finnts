@@ -295,13 +295,15 @@ final_models <- function(run_info,
     # filter to only combos that need to be processed
     current_combo_list_final <- combo_diff %>%
       sample()
+    # several series per Spark task; see spark_stage_batches()
+    combo_batches <- spark_stage_batches(current_combo_list_final, parallel_processing)
 
     # parallel run info
     par_info <- par_start(
       run_info = run_info,
       parallel_processing = parallel_processing,
       num_cores = num_cores,
-      task_length = length(current_combo_list_final)
+      task_length = length(combo_batches)
     )
     par_end_on_exit(par_info$cl)
 
@@ -309,9 +311,9 @@ final_models <- function(run_info,
     packages <- par_info$packages
     `%op%` <- par_info$foreach_operator
 
-    # submit tasks
+    # submit tasks; each runs its series one after another
     best_model_tbl <- foreach::foreach(
-      x = current_combo_list_final,
+      batch = combo_batches,
       .combine = "rbind",
       .packages = packages,
       .errorhandling = "stop",
@@ -321,6 +323,7 @@ final_models <- function(run_info,
       .noexport = NULL
     ) %op%
       {
+        do.call(rbind, lapply(batch, function(x) {
         combo <- x
 
         # get individual and ensemble model predictions
@@ -833,6 +836,7 @@ final_models <- function(run_info,
         }
 
         return(selection_worker_result(unique(predictions_tbl$Combo), selection))
+        }))
       } %>%
       base::suppressPackageStartupMessages()
 

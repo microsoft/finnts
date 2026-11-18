@@ -4,7 +4,9 @@ finnts offers two ways to use several cores, and rejects using both at once:
 
 - `parallel_processing = "local_machine"`: different time series train in separate worker
   processes. Best with many series. Each worker loads its own copy of the data and models,
-  so memory use grows with the number of workers.
+  so memory use grows with the number of workers. Agent runs (`iterate`, `update`) start a
+  fresh R process for each series, a few seconds each. If a series' process crashes, finnts
+  names the series and the reason and runs it again, up to four attempts, before failing.
 - `inner_parallel = TRUE`: tuning and backtesting work within one series runs in
   parallel. Model types are not necessarily trained simultaneously. Best with few
   series or when global models (one model across all series) run. Worker processes
@@ -51,7 +53,9 @@ capacity silently. `"parallel": "none"` still forces sequential processing.
 ## Memory failures
 
 When a run fails with a memory error, the next resume steps down one level automatically
-(halve workers, then inner parallel, then sequential). Tell the user it will be slower but
+(halve workers, then inner parallel, then sequential). A series crash that finnts reports as
+"killed by the operating system, likely out of memory" counts as a memory error; other crashes,
+such as a segfault, do not. Tell the user it will be slower but
 safer. If they want to force sequential, set `"parallel": "none"` with their OK; resume
 still keeps saved progress (parallel settings are not part of the resume check).
 

@@ -1,7 +1,15 @@
 {
-  "version": "0.3.7",
-  "released": "2026-11-15",
+  "version": "0.3.8",
+  "released": "2026-11-17",
   "changelog": [
+    {
+      "version": "0.3.8",
+      "date": "2026-11-17",
+      "changes": [
+        "Explains that local parallel Agent runs start each series in its own R process and retry a series whose process crashes, up to four attempts.",
+        "A series crash finnts reports as an out-of-memory kill still steps parallelism down on the next resume; other crashes do not."
+      ]
+    },
     {
       "version": "0.3.7",
       "date": "2026-11-15",

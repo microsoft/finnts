@@ -17,26 +17,21 @@ test_that("interrupted custom completion reuses fitted and forecast artifacts", 
   current <- fixture$current
   local_custom_update_runtime()
   best <- get_best_agent_run(current)
-  original_read <- finnts:::read_selection_file
-  calls <- 0L
+  # Move the series' current best-run record aside, as an update interrupted
+  # before logging leaves it; the saved update must rebuild it without refitting.
+  parent <- current$project_info
+  parent$run_name <- current$run_id
+  record <- local_artifact_path(parent, "logs", "-agent_best_run", hash_data("first"), extension = "csv")
+  expect_true(file.rename(record, file.path(withr::local_tempdir(), basename(record))))
+  expect_false(file.exists(record))
   local_mocked_bindings(
-    load_update_runs = function(...) tibble::tibble(),
-    read_selection_file = function(run_info, folder, suffix = NULL,
-      combo = NULL, optional = FALSE, ...) {
-      if (identical(suffix, "-agent_best_run") &&
-        identical(run_info$run_name, current$run_id) && optional && calls == 0L) {
-        calls <<- calls + 1L
-        return(tibble::tibble())
-      }
-      original_read(run_info, folder, suffix, combo, optional, ...)
-    },
     fit_models = function(...) stop("Unexpected interrupted-tail refit"),
     summarize_models = function(...) invisible(NULL), .package = "finnts")
   artifacts <- list.files(fixture$args$project_info$path, recursive = TRUE, full.names = TRUE)
   artifacts <- artifacts[grepl("/(models|forecasts)/", gsub("\\\\", "/", artifacts))]
   before <- tools::md5sum(artifacts)
   update_forecast(current, allow_iterate_forecast = FALSE, num_cores = 1)
-  expect_equal(calls, 1L)
+  expect_true(file.exists(record))
   expect_identical(tools::md5sum(artifacts), before)
   expect_equal(get_best_agent_run(current), best)
 })

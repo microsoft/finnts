@@ -1698,8 +1698,11 @@ update_global_models <- function(agent_info,
 #' Update Local Models
 #'
 #' Dispatches the driver's unfinished local combo names with the existing lean
-#' agent context. Each worker checks current outputs before refitting; stale
-#' completion metadata cannot override the work list. Storage failures propagate,
+#' agent context from [run_agent_local_updates()]. Each worker checks current
+#' outputs before refitting: a series whose own current update run is already
+#' recorded with reusable outputs (a Spark recompute or retry) returns before
+#' its predecessor is read, and stale completion metadata cannot override the
+#' work list. Storage failures propagate,
 #' including required predecessor metadata failures with their original cause,
 #' while ordinary fitting and quality failures keep their existing fallback.
 #' Custom replay validates enrollment before reference-only dispatch, restores
@@ -1750,73 +1753,18 @@ update_local_models <- function(agent_info,
   # agent adjustments to prevent serialization issues
   agent_info_lean <- agent_custom_worker_info(agent_info)
 
-  # start forecast update process
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = length(local_combo_list)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  on.exit(par_end(cl), add = TRUE)
   # series updated one after another in this process share one inner pool
   local_inner_pool(inner_parallel && is.null(parallel_processing))
-  # each Spark task's share of its node for automatic inner pools (D13)
-  task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
-  combo_results <- tryCatch(
-    {
-      foreach::foreach(
-        combo = local_combo_list,
-        .packages = packages,
-        .errorhandling = "pass",
-        .inorder = TRUE,
-        .multicombine = TRUE
-      ) %op%
-        {
-          # get the previous best run for combo
-          prev_run <- tryCatch(
-            read_exact_artifact(agent_info_lean$project_info,
-              file_list = paste0(
-                agent_info_lean$project_info$path, "/logs/",
-                hash_data(agent_info_lean$project_info$project_name), "-",
-                hash_data(prev_run_id), "-",
-                hash_data(combo), "-agent_best_run.csv"
-              ) %>% fs::path_tidy(),
-              character_columns = c("combo", "agent_run_id", "best_run_name")),
-            error = function(error) {
-              rlang::abort(paste0("Cannot read predecessor metadata for series '", combo,
-                "': ", conditionMessage(error)),
-                class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
-            }
-          )
-
-          # run update forecast for combo; its stages share one inner pool
-          update_result <- with_inner_pool(update_forecast_combo(
-            agent_info = agent_info_lean,
-            prev_best_run_tbl = prev_run,
-            parallel_processing = NULL,
-            num_cores = num_cores,
-            inner_parallel = inner_parallel,
-            seed = seed
-          ), active = inner_parallel, cores = task_cores)
-
-          if (is.list(update_result) && length(update_result$quality_rejected_combos)) return(update_result)
-          return(data.frame(Combo = hash_data(combo)))
-        } %>%
-        base::suppressPackageStartupMessages()
-    },
-    error = function(e) {
-      # hard abort: cancel Spark jobs + stop PSOCK workers immediately
-      cancel_parallel(par_info)
-
-      # still propagate the error so execute_node() can trigger failover/retry
-      stop(e)
-    }
+  combo_results <- run_agent_local_updates(
+    agent_info_lean = agent_info_lean,
+    local_combo_list = local_combo_list,
+    prev_run_id = prev_run_id,
+    project_info = project_info,
+    parallel_processing = parallel_processing,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    seed = seed
   )
 
   # separate successes from failures
@@ -1854,6 +1802,183 @@ update_local_models <- function(agent_info,
 
   return(list(status = "Finished Local Model Update", failed_combos = failed_combos,
     quality_rejected_combos = unique(quality_rejected_combos)))
+}
+
+#' Update local Agent series in parallel
+#'
+#' Dispatches one [agent_local_update_task()] per series through
+#' [run_series_tasks()] from this small frame instead of
+#' [update_local_models()]'s, because sparklyr's doSpark serializes the calling
+#' frame into every Spark task, including every series' predecessor records.
+#' On Spark and `local_machine` each series runs in its own process, so a
+#' series that crashes is named and dispatched again; one that crashes on
+#' every attempt comes back as a failed series.
+#'
+#' @param agent_info_lean Agent info without custom contracts, caches or LLM
+#'   (see `agent_custom_worker_info()`).
+#' @param local_combo_list Raw names of the series to update.
+#' @param prev_run_id Agent run ID of the predecessor whose records are read.
+#' @param project_info Project info for the pool.
+#' @param parallel_processing `NULL`, `"local_machine"` or `"spark"`.
+#' @param inner_parallel Whether each series runs its stages on an inner pool.
+#' @param num_cores Cores for the pools, or `NULL` for the defaults.
+#' @param seed Random seed of the run.
+#'
+#' @return One result per series, in order: a data frame naming the updated
+#'   series hash, the update result when it was quality-rejected, or the
+#'   series' error condition. Storage errors carry class
+#'   `finnts_update_artifact_error`; repeated crashes carry class
+#'   `finnts_series_crash`. A dispatch failure cancels the pool and stops.
+#' @noRd
+run_agent_local_updates <- function(agent_info_lean,
+                                    local_combo_list,
+                                    prev_run_id,
+                                    project_info,
+                                    parallel_processing,
+                                    inner_parallel,
+                                    num_cores,
+                                    seed) {
+  # evaluate every argument now: an unevaluated one would carry the caller's
+  # frame into each Spark task
+  force(agent_info_lean)
+  force(local_combo_list)
+  force(prev_run_id)
+  force(project_info)
+  force(parallel_processing)
+  force(inner_parallel)
+  force(num_cores)
+  force(seed)
+
+  context <- list(
+    agent_info_lean = agent_info_lean,
+    prev_run_id = prev_run_id,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    seed = seed,
+    # each Spark task's share of its node for automatic inner pools (D13)
+    task_cores = spark_inner_cores(num_cores, parallel_processing, inner_parallel)
+  )
+
+  run_series_tasks(
+    items = local_combo_list,
+    task = "agent_local_update_task",
+    context = context,
+    labels = local_combo_list,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    project_info = project_info,
+    errorhandling = "pass"
+  )
+}
+
+#' Update one local Agent series
+#'
+#' The task [run_agent_local_updates()] runs for each series. It first returns
+#' when the series' own current update run is already recorded with reusable
+#' outputs (a Spark recompute or retry, or a crashed series dispatched again;
+#' see [current_update_complete()]), then reads its predecessor record and
+#' refits.
+#'
+#' @param item Raw series name.
+#' @param context Shared inputs from [run_agent_local_updates()]:
+#'   `agent_info_lean`, `prev_run_id`, `inner_parallel`, `num_cores`, `seed`
+#'   and `task_cores`.
+#'
+#' @return A data frame naming the updated series hash, or the update result
+#'   when it was quality-rejected. Unreadable current or predecessor metadata
+#'   raises `finnts_update_artifact_error`.
+#' @noRd
+agent_local_update_task <- function(item, context) {
+  agent_info_lean <- context$agent_info_lean
+  combo <- item
+
+  # a re-run task returns when this series' current update run is already
+  # recorded with reusable outputs
+  update_complete <- tryCatch(
+    current_update_complete(agent_info_lean, hash_data(combo),
+      run_name = paste0("agent_", agent_info_lean$run_id, "_", hash_data(combo))),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read current completion metadata for series '", combo,
+        "': ", conditionMessage(error)),
+        class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+    }
+  )
+  if (update_complete) {
+    return(data.frame(Combo = hash_data(combo)))
+  }
+
+  # get the previous best run for combo
+  prev_run <- tryCatch(
+    read_exact_artifact(agent_info_lean$project_info,
+      file_list = paste0(
+        agent_info_lean$project_info$path, "/logs/",
+        hash_data(agent_info_lean$project_info$project_name), "-",
+        hash_data(context$prev_run_id), "-",
+        hash_data(combo), "-agent_best_run.csv"
+      ) %>% fs::path_tidy(),
+      character_columns = c("combo", "agent_run_id", "best_run_name")),
+    error = function(error) {
+      rlang::abort(paste0("Cannot read predecessor metadata for series '", combo,
+        "': ", conditionMessage(error)),
+        class = unique(c("finnts_update_artifact_error", class(error))), parent = error)
+    }
+  )
+
+  # run update forecast for combo; its stages share one inner pool
+  update_result <- with_inner_pool(update_forecast_combo(
+    agent_info = agent_info_lean,
+    prev_best_run_tbl = prev_run,
+    parallel_processing = NULL,
+    num_cores = context$num_cores,
+    inner_parallel = context$inner_parallel,
+    seed = context$seed
+  ), active = context$inner_parallel, cores = context$task_cores)
+
+  if (is.list(update_result) && length(update_result$quality_rejected_combos)) return(update_result)
+  data.frame(Combo = hash_data(combo))
+}
+
+#' Whether a series' current Agent update or default forecast is complete
+#'
+#' Reads the series' best-run record of the current Agent run by exact path and
+#' accepts it only when its saved models and forecasts can be reused (see
+#' [completed_update_runs()]). A series whose update was quality-rejected
+#' counts as complete only once its default replacement (run named with
+#' `timestamp`) is recorded. With `run_name`, the record must also name that
+#' run, so a record naming another run is left for the update to reject.
+#'
+#' @param agent_info Lean Agent info of the current run; its
+#'   `quality_rejected_combos` lists quality-rejected series hashes.
+#' @param combo_hash Hashed series name.
+#' @param timestamp Run-name suffix of the default replacement forecast.
+#' @param completion_info Agent info used to validate the recorded outputs.
+#' @param run_name Run the record must name, or `NULL` to accept any run.
+#'
+#' @return `TRUE` when the current record and its outputs are complete;
+#'   `FALSE` when the record is missing, names another run than `run_name`, or
+#'   its outputs must be refitted. Storage and invalid-metadata errors propagate.
+#' @noRd
+current_update_complete <- function(agent_info, combo_hash, timestamp = "default",
+                                    completion_info = agent_info, run_name = NULL) {
+  quality_rejected <- combo_hash %in% agent_info$quality_rejected_combos
+  metadata_reader <- if (quality_rejected) read_file else read_exact_artifact
+  agent_best_run_tbl <- metadata_reader(agent_info$project_info,
+    file_list = paste0(
+      agent_info$project_info$path, "/logs/",
+      hash_data(agent_info$project_info$project_name), "-",
+      hash_data(agent_info$run_id), "-",
+      combo_hash, "-agent_best_run.csv"
+    ) %>% fs::path_tidy(), allow_missing = TRUE,
+    character_columns = c("combo", "agent_run_id", "best_run_name")
+  ) %||% tibble::tibble()
+
+  best_run_name <- as.character(agent_best_run_tbl[["best_run_name"]])
+  own_run <- is.null(run_name) || identical(best_run_name, run_name)
+  accepted_default <- identical(best_run_name,
+    paste0("agent_", agent_info$run_id, "_", combo_hash, "_", timestamp))
+  nrow(agent_best_run_tbl) > 0 && own_run &&
+    (!quality_rejected || accepted_default) &&
+    nrow(completed_update_runs(completion_info, agent_best_run_tbl)) > 0
 }
 
 #' Check Update Failures
@@ -2048,6 +2173,9 @@ analyze_results <- function(agent_info) {
 #' Reconcile Agent Forecast
 #'
 #' This function reconciles the agent forecast based on the best model runs and prepares the final forecast table.
+#' Settings and forecast rows both come from the saved `run_metadata`
+#' snapshot, so the reconciled forecast uses the iteration `run_metadata`
+#' names even if a live best-run record changed after it was saved.
 #'
 #' @param agent_info A list containing the agent information.
 #' @param project_info A list containing the project information.
@@ -2122,9 +2250,10 @@ reconcile_agent_forecast <- function(agent_info,
     strict = is.null(project_info$storage_object)
   )
 
-  # load hierarchical forecast
+  # load hierarchical forecast from the same run_metadata snapshot
   hts_fcst_tbl <- load_agent_forecast(
-    agent_info = agent_info
+    agent_info = agent_info,
+    best_run_tbl = run_inputs
   )
 
   # reconcile the forecast
@@ -2200,6 +2329,7 @@ reconcile_agent_forecast <- function(agent_info,
 #'   Custom runs check enrolled foundation-model availability once in the
 #'   coordinator and pass it to workers for consistent submission revalidation.
 #'   Non-custom runs retain the machine-wide foundation-model availability check.
+#'   Series are dispatched from [run_agent_default_forecasts()].
 #' @noRd
 forecast_new_combos <- function(agent_info,
                                 new_combos,
@@ -2273,107 +2403,18 @@ forecast_new_combos <- function(agent_info,
   agent_info_lean <- agent_custom_worker_info(agent_info)
   agent_info_lean$default_reforecast <- TRUE
 
-  # parallel setup
-  par_info <- par_start(
-    run_info = project_info,
-    parallel_processing = parallel_processing,
-    num_cores = num_cores,
-    task_length = length(all_combos)
-  )
-
-  cl <- par_info$cl
-  packages <- par_info$packages
-  `%op%` <- par_info$foreach_operator
-
-  on.exit(par_end(cl), add = TRUE)
   # series forecast one after another in this process share one inner pool
   local_inner_pool(inner_parallel && is.null(parallel_processing))
-  # each Spark task's share of its node for automatic inner pools (D13)
-  task_cores <- spark_inner_cores(num_cores, parallel_processing, inner_parallel)
 
-  timestamp <- "default"
-
-  combo_tbl <- tryCatch(
-    {
-      foreach::foreach(
-        combo_hash = all_combos,
-        .packages = packages,
-        .errorhandling = "stop",
-        .inorder = FALSE,
-        .multicombine = TRUE
-      ) %op%
-        {
-          agent_info_lean$custom_enrollment_cache <- new.env(parent = emptyenv())
-          worker_info <- load_agent_custom_update_state(agent_info_lean)
-          # check if combo already ran (in case of restart)
-          metadata_reader <- if (combo_hash %in% agent_info_lean$quality_rejected_combos) {
-            read_file
-          } else read_exact_artifact
-          agent_best_run_tbl <- metadata_reader(agent_info_lean$project_info,
-            file_list = paste0(
-              agent_info_lean$project_info$path, "/logs/",
-              hash_data(agent_info_lean$project_info$project_name), "-",
-              hash_data(agent_info_lean$run_id), "-",
-              combo_hash, "-agent_best_run.csv"
-            ) %>% fs::path_tidy(), allow_missing = TRUE,
-            character_columns = c("combo", "agent_run_id", "best_run_name")
-          ) %||% tibble::tibble()
-
-          accepted_default <- identical(as.character(agent_best_run_tbl[["best_run_name"]]),
-            paste0("agent_", agent_info_lean$run_id, "_", combo_hash, "_", timestamp))
-          current_complete <- nrow(agent_best_run_tbl) > 0 &&
-            (!combo_hash %in% agent_info_lean$quality_rejected_combos || accepted_default) &&
-            nrow(completed_update_runs(worker_info, agent_best_run_tbl)) > 0
-          if (current_complete) {
-            return(data.frame(Combo = combo_hash))
-          }
-
-          # run forecast with default inputs; its stages share one inner pool
-          submission <- capture_forecast_warnings(tryCatch(with_inner_pool(submit_fcst_run(
-            agent_info = agent_info_lean,
-            inputs = default_inputs,
-            combo = combo_hash,
-            timestamp = timestamp,
-            parallel_processing = NULL,
-            inner_parallel = inner_parallel,
-            num_cores = num_cores,
-            seed = seed
-          ), active = inner_parallel, cores = task_cores), finnts_forecast_selection_rejected = function(error) error))
-          run_info <- submission$value
-          if (inherits(run_info, "finnts_forecast_selection_rejected")) {
-            return(list(quality_error = run_info, warnings = submission$warnings))
-          }
-
-          # get forecast output and calculate metrics
-          fcst_tbl <- get_fcst_output(run_info)
-          weighted_mape <- calculate_fcst_metrics(run_info, fcst_tbl)
-          if (!isTRUE(agent_selection_summary(run_info$forecast_selection, check_quality = TRUE,
-            allow_plausibility_fallback = TRUE)$acceptable)) {
-            return(list(quality_error = rlang::error_cnd(
-              "finnts_forecast_selection_rejected",
-              message = "The default replacement forecast failed the applicable quality checks.",
-              combo = names(run_info$forecast_selection$selections)
-            ), warnings = submission$warnings))
-          }
-
-          # log the best run
-          log_best_run(
-            agent_info = worker_info,
-            run_info = run_info,
-            weighted_mape = weighted_mape,
-            check_best_run = FALSE,
-            combo = combo_hash
-          )
-
-          return(list(Combo = combo_hash, warnings = submission$warnings))
-        } %>%
-        base::suppressPackageStartupMessages()
-    },
-    error = function(e) {
-      # hard abort: cancel parallel jobs immediately
-      cancel_parallel(par_info)
-      stop(e)
-    }
+  combo_tbl <- run_agent_default_forecasts(
+    agent_info_lean = agent_info_lean,
+    all_combos = all_combos,
+    default_inputs = default_inputs,
+    project_info = project_info,
+    parallel_processing = parallel_processing,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    seed = seed
   )
 
   for (result in combo_tbl) {
@@ -2383,6 +2424,139 @@ forecast_new_combos <- function(agent_info,
     inherits(result$quality_error, "finnts_forecast_selection_rejected"), combo_tbl)
   if (length(quality_failures)) stop(quality_failures[[1]]$quality_error)
   return("Finished Forecasting New Time Series")
+}
+
+#' Forecast new or failed Agent series with default inputs in parallel
+#'
+#' Dispatches one [agent_default_forecast_task()] per series through
+#' [run_series_tasks()] from this small frame instead of
+#' [forecast_new_combos()]'s, because sparklyr's doSpark serializes the calling
+#' frame into every Spark task. On Spark and `local_machine` each series runs
+#' in its own process, so a series that crashes is named and dispatched again.
+#'
+#' @param agent_info_lean Agent info without custom contracts, caches or LLM,
+#'   with `default_reforecast = TRUE`.
+#' @param all_combos Hashed names of the series to forecast.
+#' @param default_inputs Default local run inputs to submit.
+#' @param project_info Project info for the pool.
+#' @param parallel_processing `NULL`, `"local_machine"` or `"spark"`.
+#' @param inner_parallel Whether each series runs its stages on an inner pool.
+#' @param num_cores Cores for the pools, or `NULL` for the defaults.
+#' @param seed Random seed of the run.
+#'
+#' @return One result per series: the series hash with relayed `warnings`, or
+#'   a `quality_error` for a rejected default forecast. Errors, and a series
+#'   that crashes on every attempt (class `finnts_series_crash`), cancel the
+#'   pool and stop.
+#' @noRd
+run_agent_default_forecasts <- function(agent_info_lean,
+                                        all_combos,
+                                        default_inputs,
+                                        project_info,
+                                        parallel_processing,
+                                        inner_parallel,
+                                        num_cores,
+                                        seed) {
+  # evaluate every argument now: an unevaluated one would carry the caller's
+  # frame into each Spark task
+  force(agent_info_lean)
+  force(all_combos)
+  force(default_inputs)
+  force(project_info)
+  force(parallel_processing)
+  force(inner_parallel)
+  force(num_cores)
+  force(seed)
+
+  context <- list(
+    agent_info_lean = agent_info_lean,
+    default_inputs = default_inputs,
+    inner_parallel = inner_parallel,
+    num_cores = num_cores,
+    seed = seed,
+    # each Spark task's share of its node for automatic inner pools (D13)
+    task_cores = spark_inner_cores(num_cores, parallel_processing, inner_parallel),
+    timestamp = "default"
+  )
+
+  run_series_tasks(
+    items = all_combos,
+    task = "agent_default_forecast_task",
+    context = context,
+    labels = all_combos,
+    parallel_processing = parallel_processing,
+    num_cores = num_cores,
+    project_info = project_info,
+    errorhandling = "stop"
+  )
+}
+
+#' Forecast one new or failed Agent series with default inputs
+#'
+#' The task [run_agent_default_forecasts()] runs for each series. It skips a
+#' series whose current default forecast is already complete (a restart, or a
+#' crashed series dispatched again; see [current_update_complete()]),
+#' otherwise submits the default inputs and logs the run.
+#'
+#' @param item Hashed series name.
+#' @param context Shared inputs from [run_agent_default_forecasts()]:
+#'   `agent_info_lean`, `default_inputs`, `inner_parallel`, `num_cores`,
+#'   `seed`, `task_cores` and the run-name `timestamp`.
+#'
+#' @return `list(Combo, warnings)` for a logged or already complete series
+#'   (a data frame naming the series when it was already complete), or
+#'   `list(quality_error, warnings)` when the default forecast was rejected.
+#' @noRd
+agent_default_forecast_task <- function(item, context) {
+  agent_info_lean <- context$agent_info_lean
+  combo_hash <- item
+  timestamp <- context$timestamp
+
+  agent_info_lean$custom_enrollment_cache <- new.env(parent = emptyenv())
+  worker_info <- load_agent_custom_update_state(agent_info_lean)
+  # check if combo already ran (in case of restart)
+  if (current_update_complete(agent_info_lean, combo_hash, timestamp, worker_info)) {
+    return(data.frame(Combo = combo_hash))
+  }
+
+  # run forecast with default inputs; its stages share one inner pool
+  submission <- capture_forecast_warnings(tryCatch(with_inner_pool(submit_fcst_run(
+    agent_info = agent_info_lean,
+    inputs = context$default_inputs,
+    combo = combo_hash,
+    timestamp = timestamp,
+    parallel_processing = NULL,
+    inner_parallel = context$inner_parallel,
+    num_cores = context$num_cores,
+    seed = context$seed
+  ), active = context$inner_parallel, cores = context$task_cores), finnts_forecast_selection_rejected = function(error) error))
+  run_info <- submission$value
+  if (inherits(run_info, "finnts_forecast_selection_rejected")) {
+    return(list(quality_error = run_info, warnings = submission$warnings))
+  }
+
+  # get forecast output and calculate metrics
+  fcst_tbl <- get_fcst_output(run_info)
+  weighted_mape <- calculate_fcst_metrics(run_info, fcst_tbl)
+  if (!isTRUE(agent_selection_summary(run_info$forecast_selection, check_quality = TRUE,
+    allow_plausibility_fallback = TRUE)$acceptable)) {
+    return(list(quality_error = rlang::error_cnd(
+      "finnts_forecast_selection_rejected",
+      message = "The default replacement forecast failed the applicable quality checks.",
+      combo = names(run_info$forecast_selection$selections)
+    ), warnings = submission$warnings))
+  }
+
+  # log the best run
+  log_best_run(
+    agent_info = worker_info,
+    run_info = run_info,
+    weighted_mape = weighted_mape,
+    check_best_run = FALSE,
+    combo = combo_hash
+  )
+
+  list(Combo = combo_hash, warnings = submission$warnings)
 }
 
 # Read predecessor fits once, preserving the update artifact error class and
@@ -3265,6 +3439,10 @@ update_model_execution <- function(expression, model, recoverable) {
 #' custom source, provider, configuration and artifact errors remain hard.
 #' A built-in model that fails on every back-test split raises tune's first error
 #' note, untyped as before, instead of a missing `.pred` column error.
+#' Retuning a built-in model without hyperparameters only checks, through
+#' `check_untuned_validation()`, that it fits a validation split. Tuning and
+#' back-test fits compute RMSE only and skip multistep xgboost's training-set
+#' evaluation; the returned fits and forecasts are unchanged.
 #'
 #' @param run_info A list containing run information including project name, run name, storage object, path, data output, and object output.
 #' @param combo A string indicating the combo type (e.g., "All-Data" or specific combo).
@@ -3607,13 +3785,25 @@ fit_models <- function(run_info,
     prep_data <- clamp_negative_target(prep_data, model)
 
     # tune hyperparameters
-    if (retune_hyperparameters && !is_custom) {
+    validation_splits <- model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")
+    if (retune_hyperparameters && !is_custom && !has_tuning_parameters(workflow) && nrow(validation_splits) > 0) {
+      set.seed(seed)
+
+      update_model_execution(check_untuned_validation(
+        discarded_fit_workflow(workflow), prep_data, validation_splits, model,
+        c(inner_packages, "finnts")
+      ), model, recoverable)
+
+      hyperparameter_id <- 1
+      finalized_workflow <- workflow
+    } else if (retune_hyperparameters && !is_custom) {
       set.seed(seed)
 
       tune_results <- update_model_execution(tune::tune_grid(
-        object = workflow,
-        resamples = create_splits(prep_data, model_train_test_tbl %>% dplyr::filter(Run_Type == "Validation")),
+        object = discarded_fit_workflow(workflow),
+        resamples = create_splits(prep_data, validation_splits),
         grid = hyperparameters %>% dplyr::select(-Hyperparameter_Combo),
+        metrics = model_tuning_metrics(),
         control = tune::control_grid(
           allow_par = inner_parallel,
           pkgs = c(inner_packages, "finnts"),
@@ -3660,9 +3850,9 @@ fit_models <- function(run_info,
           pkgs = c(inner_packages, "finnts"), parallel_over = "everything")) %>%
         base::suppressMessages() %>% base::suppressWarnings()
     } else update_model_execution(tune::fit_resamples(
-      object = finalized_workflow,
+      object = discarded_fit_workflow(finalized_workflow),
       resamples = create_splits(prep_data, model_train_test_tbl),
-      metrics = NULL,
+      metrics = model_tuning_metrics(),
       control = tune::control_resamples(
         allow_par = inner_parallel,
         save_pred = TRUE,
@@ -3707,21 +3897,7 @@ fit_models <- function(run_info,
     # undo differencing transformation
     if (transformed_recipe && isTRUE(prev_run_log_tbl$stationary) & model %in% list_multivariate_models() & !(model %in% list_foundation_models())) {
       if (combo == "All-Data") {
-        final_fcst <- final_fcst %>%
-          dplyr::group_by(Combo) %>%
-          dplyr::group_split() %>%
-          purrr::map(function(x) {
-            combo <- unique(x$Combo)
-
-            final_fcst_return <- x %>%
-              undifference_forecast(
-                prep_data %>% dplyr::filter(Combo == combo),
-                combo_info_tbl %>% dplyr::filter(Combo == combo)
-              )
-
-            return(final_fcst_return)
-          }) %>%
-          dplyr::bind_rows()
+        final_fcst <- undifference_global_forecast(final_fcst, prep_data, combo_info_tbl)
       } else {
         final_fcst <- final_fcst %>%
           undifference_forecast(

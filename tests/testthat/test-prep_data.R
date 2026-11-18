@@ -175,6 +175,75 @@ test_that("clean_outliers keeps future Target_Original NA so future Target is no
   expect_true(all(is.na(future_assessment$Target)))
 })
 
+test_that("cleaning both outliers and missing values keeps raw targets with fewer than two observations", {
+  # Regression: imputing Target_Original called approx(), which needs two
+  # observed values, so a sparse series stopped prep_data() with both flags on.
+  dates <- seq(as.Date("2024-07-01"), by = "month", length.out = 12)
+  for (target in list(rep(NA_real_, 12), c(NA, NA, 5, rep(NA, 9)))) {
+    cleaned <- clean_outliers_missing_values(
+      tibble::tibble(Combo = "A", Date = dates, Target = target),
+      clean_outliers = TRUE,
+      clean_missing_values = TRUE,
+      frequency_number = 12,
+      external_regressors = NULL
+    )
+    expect_identical(cleaned$Target_Original, target)
+    expect_identical(cleaned$Target, target)
+  }
+
+  # two observed values are still imputed as before
+  cleaned <- clean_outliers_missing_values(
+    tibble::tibble(Combo = "A", Date = dates, Target = c(NA, 2, rep(NA, 9), 4)),
+    clean_outliers = TRUE,
+    clean_missing_values = TRUE,
+    frequency_number = 12,
+    external_regressors = NULL
+  )
+  expect_false(anyNA(cleaned$Target_Original))
+})
+
+test_that("prep_data cleans outliers and missing values beside a one-observation series", {
+  full_tbl <- tibble::tibble(
+    id = "full",
+    Date = seq(as.Date("2024-07-01"), by = "month", length.out = 28),
+    value = as.numeric(100 + 1:28)
+  )
+  data_tbl <- dplyr::bind_rows(
+    full_tbl,
+    tibble::tibble(id = "sparse", Date = as.Date("2024-07-01"), value = 50)
+  )
+  run_info <- set_run_info(
+    project_name = "sparse_cleaning",
+    run_name = "both_cleaning_flags",
+    path = withr::local_tempdir()
+  )
+
+  prep_data(
+    run_info = run_info,
+    input_data = data_tbl,
+    combo_variables = "id",
+    target_variable = "value",
+    date_type = "month",
+    forecast_horizon = 8,
+    hist_end_date = as.Date("2026-10-01"),
+    clean_outliers = TRUE,
+    clean_missing_values = TRUE,
+    recipes_to_run = "R1"
+  )
+
+  prepped <- get_prepped_data(run_info, recipe = "R1")
+  expect_setequal(unique(prepped$Combo), c("full", "sparse"))
+
+  sparse_tbl <- prepped %>%
+    dplyr::filter(Combo == "sparse") %>%
+    dplyr::arrange(Date)
+  sparse_hist <- sparse_tbl %>% dplyr::filter(Date <= as.Date("2026-10-01"))
+  expect_equal(nrow(sparse_hist), 28)
+  expect_equal(sparse_hist$Target[[1]], 50)
+  expect_equal(sparse_hist$Target_Original, sparse_hist$Target)
+  expect_true(all(is.na(sparse_tbl$Target_Original[sparse_tbl$Date > as.Date("2026-10-01")])))
+})
+
 # Stand-in for sparklyr::spark_apply() in prep_data() tests: computes the
 # grouped worker's result with spark_apply_grouped_result() and wraps it in a
 # lazy stand-in that only dplyr::collect() turns into a data frame, like a
