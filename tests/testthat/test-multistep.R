@@ -630,6 +630,22 @@ test_that("discarded multistep xgboost fits match saved fits without evaluation 
   }
 })
 
+test_that("discarded multistep xgboost fits with early stopping match saved fits", {
+  skip_if_not_installed("xgboost")
+  # early stopping needs evaluation data, so these fits keep the normal trainer
+  for (validation in c(0, 0.2)) {
+    args <- xgboost_multistep_args(max_depth = 3, nrounds = 8, eta = 0.2, early_stop = 2, validation = validation)
+    set.seed(11)
+    saved <- do.call(xgboost_multistep_fit_impl, args)
+    set.seed(11)
+    discarded <- do.call(xgboost_multistep_fit_impl, c(args, finnts_discarded_fit = TRUE))
+
+    expect_identical(xgboost_multistep_boosters(discarded), xgboost_multistep_boosters(saved), label = paste("validation", validation))
+    expect_identical(discarded$data, saved$data)
+    expect_false(any(vapply(discarded$models, function(model) is.null(attr(model, "evaluation_log")), logical(1))))
+  }
+})
+
 test_that("multistep xgboost clamps min_child_weight to the training rows without a warning", {
   skip_if_not_installed("xgboost")
   args <- xgboost_multistep_args(max_depth = 2, nrounds = 4)

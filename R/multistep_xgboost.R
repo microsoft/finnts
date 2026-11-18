@@ -514,20 +514,23 @@ xgboost_multistep_fit_impl <- function(x, y,
 #' `modeltime::xgboost_impl()`, or to its evaluation-free copy when the fit is
 #' discarded after predicting. The flag arrives as a parsnip engine argument
 #' set by `discarded_fit_workflow()`; absorbing it here keeps it away from
-#' xgboost.
+#' xgboost. Early stopping needs evaluation data, so a fit with `early_stop`
+#' set always uses modeltime's path.
 #'
 #' @param ... Arguments for `modeltime::xgboost_impl()`.
+#' @param early_stop Rounds without improvement before stopping, or NULL;
+#'   passed on unchanged.
 #' @param finnts_discarded_fit TRUE for `tune_grid()` and `fit_resamples()`
 #'   fits, whose boosters are dropped after predicting.
 #'
-#' @return An `xgb.Booster`. A discarded fit has the same trees and predictions
-#'   but no `evaluation_log` attribute; it uses modeltime's path when the
-#'   evaluation-free copy is unavailable.
+#' @return An `xgb.Booster`. A discarded fit without early stopping has the
+#'   same trees and predictions but no `evaluation_log` attribute; it uses
+#'   modeltime's path when the evaluation-free copy is unavailable.
 #' @noRd
-xgboost_lag_fit <- function(..., finnts_discarded_fit = FALSE) {
-  impl <- if (isTRUE(finnts_discarded_fit)) xgboost_discarded_impl()
+xgboost_lag_fit <- function(..., early_stop = NULL, finnts_discarded_fit = FALSE) {
+  impl <- if (isTRUE(finnts_discarded_fit) && is.null(early_stop)) xgboost_discarded_impl()
   if (is.null(impl)) impl <- modeltime::xgboost_impl
-  impl(...)
+  impl(..., early_stop = early_stop)
 }
 
 # Per-process cache for xgboost_discarded_impl(), filled on first use.
